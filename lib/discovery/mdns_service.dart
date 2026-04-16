@@ -11,11 +11,12 @@ class AirShiftMdnsService {
 
   Stream<List<AirShiftDevice>> get devicesStream => _devicesController.stream;
 
-  Future<void> startAnnouncing(String sessionName, int port) async {
+  Future<void> startAnnouncing(String sessionName, int port, {String? thumbprint}) async {
     _registration = await register(Service(
       name: sessionName,
       type: '_airshift._tcp',
       port: port,
+      txt: thumbprint != null ? {'thumb': thumbprint} : null,
     ));
   }
 
@@ -47,10 +48,12 @@ class AirShiftMdnsService {
       }
 
       if (ip != null) {
+        final thumb = service.txt != null ? utf8.decode(service.txt!['thumb'] as List<int>) : null;
         final device = AirShiftDevice(
           sessionName: service.name!,
           ipAddress: ip,
           port: service.port ?? 49317,
+          thumbprint: thumb,
         );
         _discoveredDevices[service.name!] = device;
       }

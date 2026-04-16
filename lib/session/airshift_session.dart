@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import '../gesture/gesture_detector.dart';
 import '../gesture/gesture_state_machine.dart';
 import 'session_state.dart';
@@ -6,6 +7,11 @@ import '../discovery/mdns_service.dart';
 import '../discovery/ble_proximity.dart';
 import '../discovery/name_generator.dart';
 import '../discovery/airshift_device.dart';
+import '../transfer/transfer_server.dart';
+import '../transfer/transfer_client.dart';
+import '../transfer/transfer_manifest.dart';
+import '../transfer/checksum.dart';
+import 'package:uuid/uuid.dart';
 
 class AirShiftSession {
   SessionState _currentState = SessionState.idle;
@@ -17,15 +23,24 @@ class AirShiftSession {
   // Discovery Services
   final _mdns = AirShiftMdnsService();
   final _ble = AirShiftBleProximity();
+  
+  // Transfer Services
+  final _server = AirShiftTransferServer();
+  final _client = AirShiftTransferClient();
+  
   String? _currentSessionName;
   final _devicesController = StreamController<List<AirShiftDevice>>.broadcast();
   Stream<List<AirShiftDevice>> get nearbyDevices => _devicesController.stream;
+
+  final Set<String> _selectedFiles = {};
+  Set<String> get selectedFiles => _selectedFiles;
 
   final _stateController = StreamController<SessionState>.broadcast();
   Stream<SessionState> get stateStream => _stateController.stream;
 
   StreamSubscription? _gestureSubscription;
   StreamSubscription? _mdnsSubscription;
+  List<AirShiftDevice> _lastNearbyDevices = [];
 
   /// Starts an Air Shift session.
   void start() async {
@@ -35,6 +50,9 @@ class AirShiftSession {
     _currentState = SessionState.active;
     _stateController.add(_currentState);
     
+    // Phase 5 - Start Transfer Server
+    await _server.start(49317);
+    
     // Phase 2 - Start Camera and Detector
     await detector.initialize();
     _gestureSubscription = detector.gestureStream.listen((event) {
@@ -43,11 +61,15 @@ class AirShiftSession {
     });
     
     // Phase 4 - Start mDNS + BLE
-    await _mdns.startAnnouncing(_currentSessionName!, 49317);
+    await _mdns.startAnnouncing(
+      _currentSessionName!, 
+      49317, 
+      thumbprint: _server.certThumbprint
+    );
     await _mdns.startDiscovery();
     _mdnsSubscription = _mdns.devicesStream.listen((devices) {
-      final proximateDevices = _ble.applyProximity(devices);
-      _devicesController.add(proximateDevices);
+      _lastNearbyDevices = _ble.applyProximity(devices);
+      _devicesController.add(_lastNearbyDevices);
     });
   }
 
@@ -68,25 +90,52 @@ class AirShiftSession {
     await _mdnsSubscription?.cancel();
     _ble.stopScan();
     
+    // Phase 5 - Stop Transfer Server
+    await _server.stop();
+    
     _currentSessionName = null;
+    _lastNearbyDevices = [];
   }
 
   /// State machine handler for gesture events.
   void onGestureEvent(Gesture gesture) {
     if (_currentState == SessionState.idle) return;
 
-    // Critical Rule enforced in GestureStateMachine
+    final prevState = _currentState;
+    stateMachine.onGestureEvent(GestureEvent(gesture, x: 0, y: 0)); // Proxy to internal machine
+
     final gState = stateMachine.currentState;
     
     if (gState == GestureState.holding && _currentState != SessionState.holding) {
       _currentState = SessionState.holding;
       _stateController.add(_currentState);
-      _ble.startScan(); // Start BLE scan only in HOLDING state
-    } else if (gState == GestureState.cursor && _currentState != SessionState.active) {
+      _ble.startScan();
+    } else if (gState == GestureState.idle && _currentState != SessionState.active) {
        _currentState = SessionState.active;
        _stateController.add(_currentState);
        _ble.stopScan();
     }
+
+    // Phase 5 - Transfer Trigger (Palm after Fist)
+    if (prevState == SessionState.holding && gesture == Gesture.openPalm) {
+      _initiateTransfer();
+    }
+  }
+
+  void _initiateTransfer() async {
+    if (_lastNearbyDevices.isEmpty) {
+      print('No target devices nearby for transfer');
+      return;
+    }
+
+    _currentState = SessionState.transferring;
+    _stateController.add(_currentState);
+
+    final target = _lastNearbyDevices.first;
+    print('Initiating transfer to: ${target.sessionName} @ ${target.ipAddress}');
+
+    // Mock file for verification until Phase 6 file selection is fully connected
+    // This part should pick the actual selected files from the overlay
   }
 
   void dispose() {

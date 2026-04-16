@@ -2,12 +2,14 @@ class AirShiftDevice {
   final String sessionName;
   final String ipAddress;
   final int port;
+  final String? thumbprint;
   int? rssi;
 
   AirShiftDevice({
     required this.sessionName,
     required this.ipAddress,
     required this.port,
+    this.thumbprint,
     this.rssi,
   });
 
