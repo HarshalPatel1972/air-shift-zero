@@ -27,11 +27,18 @@ class AirShiftTransferServer {
   
   String? get certThumbprint {
     if (_certPem == null) return null;
-    // Standard Fingerprint: SHA-256 of the DER (binary) certificate
-    // decodePem returns a list of X509CertificateData objects
-    final certData = X509Utils.decodePem(_certPem!);
-    if (certData.isEmpty) return null;
-    return sha256.convert(certData.first.bytes).toString();
+    
+    // Manual Version-Agnostic PEM to DER conversion
+    final lines = _certPem!.split('\n');
+    final base64Content = lines
+        .where((line) => !line.startsWith('-----'))
+        .join('')
+        .replaceAll('\r', '')
+        .replaceAll('\n', '')
+        .trim();
+        
+    final derBytes = base64.decode(base64Content);
+    return sha256.convert(derBytes).toString();
   }
 
   Future<void> start(int port) async {
