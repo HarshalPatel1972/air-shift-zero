@@ -20,12 +20,13 @@ Tile? onTileClicked(Tile tile) {
   if (session.currentState == SessionState.idle) {
     OverlayManager.show();
     session.start();
-    return tile.copyWith(tileStatus: TileStatus.active);
+    tile.tileStatus = TileStatus.active;
   } else {
     session.end();
     OverlayManager.hide();
-    return tile.copyWith(tileStatus: TileStatus.inactive);
+    tile.tileStatus = TileStatus.inactive;
   }
+  return tile;
 }
 
 @pragma('vm:entry-point')
