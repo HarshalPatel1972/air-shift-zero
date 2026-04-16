@@ -1,5 +1,4 @@
-import 'dart:io';
-import 'dart:convert';
+import 'package:basic_utils/basic_utils.dart';
 import 'transfer_manifest.dart';
 
 class AirShiftTransferClient {
@@ -10,14 +9,19 @@ class AirShiftTransferClient {
     required TransferManifest manifest,
     required String expectedThumbprint,
   }) async {
-    // 1. Connect with Bad Certificate Callback to Implement Pinning
+    // 1. Connect with Certificate Pinning Enforcement
     final socket = await SecureSocket.connect(
       host,
       port,
-      onBadCertificate: (cert) {
-        // Implement Certificate Pinning logic
-        // Verify cert thumbprint against expectedThumbprint
-        return true; // Simplified for this phase, should verify thumbprint
+      onBadCertificate: (X509Certificate cert) {
+        // Standard Pinning: SHA-256 of the DER (binary) certificate
+        final actualThumbprint = CryptoUtils.getHash(cert.der, algorithm: 'SHA-256');
+        
+        final isPinned = actualThumbprint == expectedThumbprint;
+        if (!isPinned) {
+          debugPrint('SECURITY ALERT: Identity Pinning failed! Expected: $expectedThumbprint, Actual: $actualThumbprint');
+        }
+        return isPinned;
       },
     );
 
