@@ -30,21 +30,36 @@ class _AirShiftAppState extends State<AirShiftApp> {
   @override
   void initState() {
     super.initState();
-    _shakeDetector = AirShiftShakeDetector(session: _session);
-    _shakeDetector.start();
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _shakeDetector = AirShiftShakeDetector(session: _session);
+      _shakeDetector.start();
+    }
     
     // Ensure the UI is rendered before checking permissions to avoid startup deadlock
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkInitialPermissions();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        _checkInitialPermissions();
+      }
     });
   }
 
   Future<void> _checkInitialPermissions() async {
-    // Only show explainer if camera or overlay is not granted
-    if (!(await Permission.camera.isGranted) || !(await FlutterOverlayWindow.isPermissionGranted())) {
-      // Future: Navigate to a dedicated Onboarding/Wizard
-    } else {
-       await OverlayManager.requestPermissions();
+    // Phase 11 - Active Permission Wizard
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    
+    // 1. Camera - Required for Hand Tracking
+    if (!(await Permission.camera.isGranted)) {
+      await Permission.camera.request();
+    }
+
+    // 2. Overlay - Required for Shake Activation
+    if (!(await FlutterOverlayWindow.isPermissionGranted())) {
+      await FlutterOverlayWindow.requestPermission();
+    }
+
+    // 3. Location/Nearby - Required for P2P Discovery
+    if (!(await Permission.location.isGranted)) {
+      await Permission.location.request();
     }
   }
 
