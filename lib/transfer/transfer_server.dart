@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:basic_utils/basic_utils.dart';
 import 'package:pointycastle/export.dart' as pc;
 import 'transfer_manifest.dart';
@@ -23,11 +24,14 @@ class AirShiftTransferServer {
 
   final _eventController = StreamController<IncomingTransferEvent>.broadcast();
   Stream<IncomingTransferEvent> get eventStream => _eventController.stream;
+  
   String? get certThumbprint {
     if (_certPem == null) return null;
     // Standard Fingerprint: SHA-256 of the DER (binary) certificate
-    final derBytes = X509Utils.decodePEM(_certPem!).first.bytes;
-    return CryptoUtils.getHash(derBytes, algorithm: 'SHA-256');
+    // decodePem returns a list of X509CertificateData objects
+    final certData = X509Utils.decodePem(_certPem!);
+    if (certData.isEmpty) return null;
+    return sha256.convert(certData.first.bytes).toString();
   }
 
   Future<void> start(int port) async {

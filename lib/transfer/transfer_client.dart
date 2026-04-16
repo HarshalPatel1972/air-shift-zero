@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:basic_utils/basic_utils.dart';
+import 'package:crypto/crypto.dart';
 import 'transfer_manifest.dart';
 
 class AirShiftTransferClient {
@@ -15,7 +19,7 @@ class AirShiftTransferClient {
       port,
       onBadCertificate: (X509Certificate cert) {
         // Standard Pinning: SHA-256 of the DER (binary) certificate
-        final actualThumbprint = CryptoUtils.getHash(cert.der, algorithm: 'SHA-256');
+        final actualThumbprint = sha256.convert(cert.der).toString();
         
         final isPinned = actualThumbprint == expectedThumbprint;
         if (!isPinned) {
