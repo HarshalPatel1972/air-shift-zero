@@ -28,6 +28,9 @@ class AirShiftSession {
   final _server = AirShiftTransferServer();
   final _client = AirShiftTransferClient();
   
+  final _incomingTransferController = StreamController<TransferManifest?>.broadcast();
+  Stream<TransferManifest?> get incomingTransfer => _incomingTransferController.stream;
+
   String? _currentSessionName;
   final _devicesController = StreamController<List<AirShiftDevice>>.broadcast();
   Stream<List<AirShiftDevice>> get nearbyDevices => _devicesController.stream;
@@ -70,6 +73,11 @@ class AirShiftSession {
     _mdnsSubscription = _mdns.devicesStream.listen((devices) {
       _lastNearbyDevices = _ble.applyProximity(devices);
       _devicesController.add(_lastNearbyDevices);
+    });
+
+    // Phase 6 - Listen to Incoming Transfers
+    _server.eventStream.listen((event) {
+      _incomingTransferController.add(event.manifest);
     });
   }
 
