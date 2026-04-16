@@ -10,8 +10,8 @@ class AirShiftShakeDetector {
   StreamSubscription? _subscription;
   final AirShiftSession session;
 
-  // Constants to match original shake package logic at 2.7G
-  static const double shakeThresholdGravity = 2.7;
+  // Constants to match original shake package logic but tuned for better mobile UX
+  static const double shakeThresholdGravity = 1.5;
   static const int shakeSlopTimeMS = 500;
   
   DateTime? _lastShakeTime;
