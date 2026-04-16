@@ -1,53 +1,75 @@
-import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import '../theme/colors.dart';
 import '../theme/motion.dart';
 
-enum PaperState { arriving, pulse, unwrap, open }
+enum PaperState { arriving, transferring, unwrapping, open }
 
-class AirShiftPaperAnimation extends StatefulWidget {
+class PaperAnimation extends StatefulWidget {
   final PaperState state;
   final Widget? child;
 
-  const AirShiftPaperAnimation({
-    super.key, 
+  const PaperAnimation({
+    super.key,
     required this.state,
     this.child,
   });
 
   @override
-  State<AirShiftPaperAnimation> createState() => _AirShiftPaperAnimationState();
+  State<PaperAnimation> createState() => _PaperAnimationState();
 }
 
-class _AirShiftPaperAnimationState extends State<AirShiftPaperAnimation> with TickerProviderStateMixin {
+class _PaperAnimationState extends State<PaperAnimation> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late AnimationController _unwrapController;
-  late Animation<double> _pulseScale;
-  late Animation<double> _unwrapProgress;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _unwrapAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Phase 6 - Breathing Pulse (1.5s infinite)
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-
-    _pulseScale = Tween<double>(begin: 1.0, end: 1.02).animate(
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-
+    
+    // Phase 6 - Peel-Open Unwrap (400ms)
     _unwrapController = AnimationController(
-        vsync: this, duration: AirShiftMotion.paperUnwrap);
-    _unwrapProgress = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _unwrapController, curve: Curves.easeOut),
+      vsync: this,
+      duration: AirShiftMotion.paperUnwrap,
     );
+    _unwrapAnimation = CurvedAnimation(
+      parent: _unwrapController, 
+      curve: Curves.easeOutCubic,
+    );
+
+    _updateState(widget.state);
+  }
+
+  void _updateState(PaperState state) {
+    if (state == PaperState.transferring) {
+      _pulseController.repeat(reverse: true);
+    } else {
+      _pulseController.stop();
+    }
+
+    if (state == PaperState.unwrapping) {
+      _unwrapController.forward();
+    } else if (state == PaperState.arriving) {
+      _unwrapController.reset();
+    }
   }
 
   @override
-  void didUpdateWidget(AirShiftPaperAnimation oldWidget) {
+  void didUpdateWidget(PaperAnimation oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.state == PaperState.unwrap && oldWidget.state != PaperState.unwrap) {
-      _unwrapController.forward();
+    if (widget.state != oldWidget.state) {
+      _updateState(widget.state);
     }
   }
 
@@ -61,23 +83,23 @@ class _AirShiftPaperAnimationState extends State<AirShiftPaperAnimation> with Ti
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([_pulseController, _unwrapController]),
+      animation: Listenable.merge([_pulseAnimation, _unwrapAnimation]),
       builder: (context, child) {
-        final scale = widget.state == PaperState.pulse ? _pulseScale.value : 1.0;
-        
         return Center(
           child: Transform.scale(
-            scale: scale,
+            scale: _pulseAnimation.value,
             child: CustomPaint(
-              painter: CellophanePainter(
-                unwrapProgress: widget.state == PaperState.unwrap ? _unwrapProgress.value : 0.0,
-                isWrapped: widget.state != PaperState.open,
+              size: const Size(280, 400),
+              painter: _CellophanePainter(
+                unwrapProgress: _unwrapAnimation.value,
+                state: widget.state,
               ),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
-                child: widget.state == PaperState.open ? widget.child : null,
-              ),
+              child: widget.state == PaperState.open 
+                  ? widget.child 
+                  : Opacity(
+                      opacity: _unwrapAnimation.value, 
+                      child: widget.child
+                    ),
             ),
           ),
         );
@@ -86,70 +108,61 @@ class _AirShiftPaperAnimationState extends State<AirShiftPaperAnimation> with Ti
   }
 }
 
-class CellophanePainter extends CustomPainter {
+class _CellophanePainter extends CustomPainter {
   final double unwrapProgress;
-  final bool isWrapped;
+  final PaperState state;
 
-  CellophanePainter({required this.unwrapProgress, required this.isWrapped});
+  _CellophanePainter({required this.unwrapProgress, required this.state});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (!isWrapped && unwrapProgress == 1.0) return;
+    if (state == PaperState.open) return;
 
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.08)
+      ..color = Colors.white.withOpacity(0.08 * (1.0 - unwrapProgress))
       ..style = PaintingStyle.fill;
 
+    // The "Cellophane" look - very faint white with a slight sheen
+    final RRect rrect = RRect.fromRectAndRadius(rect, const Radius.circular(20));
+    canvas.drawRRect(rrect, paint);
+
+    // Border sheen
     final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
+      ..color = Colors.white.withOpacity(0.15 * (1.0 - unwrapProgress))
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5;
+    canvas.drawRRect(rrect, borderPaint);
 
-    // The "Paper" shape
-    final path = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-        const Radius.circular(8),
-      ));
-
+    // unwrapping peel logic (Beziers)
     if (unwrapProgress > 0) {
-      // Corner peeling logic: Subtract a triangle/arc from the top-right
-      final peelPath = Path()
-        ..moveTo(size.width, 0)
-        ..lineTo(size.width - (size.width * unwrapProgress * 1.5), 0)
-        ..lineTo(size.width, size.height * unwrapProgress * 1.5)
-        ..close();
-      
-      canvas.drawPath(
-        Path.combine(PathOperation.difference, path, peelPath), 
-        paint
+      final peelPaint = Paint()
+        ..color = Colors.white.withOpacity(0.05)
+        ..style = PaintingStyle.fill;
+        
+      final path = Path();
+      path.moveTo(size.width, 0);
+      path.lineTo(size.width - (size.width * unwrapProgress), 0);
+      path.quadraticBezierTo(
+        size.width - (size.width * unwrapProgress * 0.5),
+        size.height * unwrapProgress * 0.5,
+        size.width,
+        size.height * unwrapProgress,
       );
-      canvas.drawPath(
-        Path.combine(PathOperation.difference, path, peelPath), 
-        borderPaint
-      );
-    } else {
-      canvas.drawPath(path, paint);
-      canvas.drawPath(path, borderPaint);
+      path.close();
+      canvas.drawPath(path, peelPaint);
     }
     
-    // Subtle cellophane gloss highlights
-    final glossPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white.withOpacity(0.0),
-          Colors.white.withOpacity(0.05),
-          Colors.white.withOpacity(0.0),
-        ],
-        stops: const [0.3, 0.5, 0.7],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    
-    canvas.drawPath(path, glossPaint);
+    // Add subtle mesh glow if transferring
+    if (state == PaperState.transferring) {
+       final glowPaint = Paint()
+        ..color = AirShiftColors.bluePrimary.withOpacity(0.05)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+       canvas.drawRRect(rrect, glowPaint);
+    }
   }
 
   @override
-  bool shouldRepaint(CellophanePainter oldDelegate) => 
-      oldDelegate.unwrapProgress != unwrapProgress || oldDelegate.isWrapped != isWrapped;
+  bool shouldRepaint(covariant _CellophanePainter oldDelegate) =>
+      oldDelegate.unwrapProgress != unwrapProgress || oldDelegate.state != state;
 }
