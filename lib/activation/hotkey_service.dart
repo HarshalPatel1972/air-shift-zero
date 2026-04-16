@@ -9,13 +9,13 @@ class AirShiftHotKeyService {
     HotKey hotKey;
     if (Platform.isMacOS) {
       hotKey = HotKey(
-        KeyCode.space,
-        modifiers: [HotKeyModifier.command, HotKeyModifier.option],
+        key: LogicalKeyboardKey.space,
+        modifiers: [HotKeyModifier.meta, HotKeyModifier.alt],
         scope: HotKeyScope.system,
       );
     } else {
       hotKey = HotKey(
-        KeyCode.space,
+        key: LogicalKeyboardKey.space,
         modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
         scope: HotKeyScope.system,
       );

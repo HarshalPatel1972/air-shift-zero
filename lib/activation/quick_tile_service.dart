@@ -15,23 +15,26 @@ class AirShiftQuickTileService {
 }
 
 @pragma('vm:entry-point')
-void onTileClicked(Tile tile) async {
+Tile? onTileClicked(Tile tile) {
   final session = AirShiftSession.instance;
   if (session.currentState == SessionState.idle) {
-    await OverlayManager.show();
+    OverlayManager.show();
     session.start();
+    return tile.copyWith(tileStatus: TileStatus.active);
   } else {
     session.end();
-    await OverlayManager.hide();
+    OverlayManager.hide();
+    return tile.copyWith(tileStatus: TileStatus.inactive);
   }
 }
 
 @pragma('vm:entry-point')
-void onTileAdded(Tile tile) {
+Tile? onTileAdded(Tile tile) {
   debugPrint('Air Shift Tile Added');
+  return tile;
 }
 
 @pragma('vm:entry-point')
-void onTileRemoved(Tile tile) {
+void onTileRemoved() {
   debugPrint('Air Shift Tile Removed');
 }
