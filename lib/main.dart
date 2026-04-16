@@ -21,29 +21,46 @@ final globalSession = AirShiftSession.instance;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Phase 8 - Load Settings
-  await AirShiftSettings.instance.load();
+  try {
+    // Phase 8 - Load Settings
+    await AirShiftSettings.instance.load();
+  } catch (e) {
+    debugPrint('Settings error: $e');
+  }
   
   // Phase 3 - Desktop window setup
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    await windowManager.ensureInitialized();
-    await acrylic.Window.initialize();
+    try {
+      await windowManager.ensureInitialized();
+      await acrylic.Window.initialize();
+    } catch (e) {
+      debugPrint('Desktop Window Error: $e');
+    }
+
+    try {
+      await AirShiftHotKeyService.initialize(() async {
+        final session = AirShiftSession.instance;
+        if (session.currentState == SessionState.idle) {
+          await OverlayManager.show();
+          session.start();
+        } else {
+          session.end();
+          await OverlayManager.hide();
+        }
+      });
+    } catch (e) {
+      debugPrint('HotKey Service Error: $e');
+    }
   }
 
-  // Phase 7 - Activation Setup
-  AirShiftQuickTileService.initialize();
-  // hotKeyManager does not have ensureInitialized in some versions, initialization handled in service
-  
-  await AirShiftHotKeyService.initialize(() async {
-    final session = AirShiftSession.instance;
-    if (session.currentState == SessionState.idle) {
-      await OverlayManager.show();
-      session.start();
-    } else {
-      session.end();
-      await OverlayManager.hide();
+  // Phase 7 - Android Activation Setup
+  if (Platform.isAndroid) {
+    try {
+      AirShiftQuickTileService.initialize();
+    } catch (e) {
+      debugPrint('QuickTile Error: $e');
     }
-  });
+  }
 
   runApp(const AirShiftApp());
 }

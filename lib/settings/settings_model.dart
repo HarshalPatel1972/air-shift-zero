@@ -10,10 +10,15 @@ class AirShiftSettings {
   bool hapticFeedback = true;
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    customSavePath = prefs.getString('customSavePath');
-    startWhenDetect = prefs.getBool('startWhenDetect') ?? false;
-    hapticFeedback = prefs.getBool('hapticFeedback') ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+      customSavePath = prefs.getString('customSavePath');
+      startWhenDetect = prefs.getBool('startWhenDetect') ?? false;
+      hapticFeedback = prefs.getBool('hapticFeedback') ?? true;
+    } catch (e) {
+      debugPrint('Warning: SharedPreferences failed to load in time: $e');
+      // Continue with defaults
+    }
   }
 
   Future<void> save() async {

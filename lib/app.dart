@@ -32,7 +32,11 @@ class _AirShiftAppState extends State<AirShiftApp> {
     super.initState();
     _shakeDetector = AirShiftShakeDetector(session: _session);
     _shakeDetector.start();
-    _checkInitialPermissions();
+    
+    // Ensure the UI is rendered before checking permissions to avoid startup deadlock
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialPermissions();
+    });
   }
 
   Future<void> _checkInitialPermissions() async {
