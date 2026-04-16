@@ -13,11 +13,16 @@ import 'session/airshift_session.dart';
 import 'session/session_state.dart';
 import 'overlay/overlay_manager.dart';
 
+import 'settings/settings_model.dart';
+
 // Global session for activation triggers
 final globalSession = AirShiftSession.instance;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Phase 8 - Load Settings
+  await AirShiftSettings.instance.load();
   
   // Phase 3 - Desktop window setup
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {

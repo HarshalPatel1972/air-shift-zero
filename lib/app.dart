@@ -9,6 +9,10 @@ import 'session/session_state.dart';
 import 'overlay/overlay_manager.dart';
 import 'activation/shake_detector.dart';
 
+import 'settings/settings_screen.dart';
+import 'settings/permission_explainer.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 class AirShiftApp extends StatefulWidget {
   const AirShiftApp({super.key});
 
@@ -17,7 +21,7 @@ class AirShiftApp extends StatefulWidget {
 }
 
 class _AirShiftAppState extends State<AirShiftApp> {
-  final _session = AirShiftSession();
+  final _session = AirShiftSession.instance;
   late AirShiftShakeDetector _shakeDetector;
 
   @override
@@ -25,11 +29,16 @@ class _AirShiftAppState extends State<AirShiftApp> {
     super.initState();
     _shakeDetector = AirShiftShakeDetector(session: _session);
     _shakeDetector.start();
-    _requestPermissions();
+    _checkInitialPermissions();
   }
 
-  Future<void> _requestPermissions() async {
-    await OverlayManager.requestPermissions();
+  Future<void> _checkInitialPermissions() async {
+    // Only show explainer if camera or overlay is not granted
+    if (!(await Permission.camera.isGranted) || !(await FlutterOverlayWindow.isPermissionGranted())) {
+      // Future: Navigate to a dedicated Onboarding/Wizard
+    } else {
+       await OverlayManager.requestPermissions();
+    }
   }
 
   @override
@@ -54,7 +63,10 @@ class _AirShiftAppState extends State<AirShiftApp> {
           labelSmall: AirShiftTypography.label,
         ),
       ),
-      home: FoundationScreen(session: _session),
+      routes: {
+        '/': (context) => FoundationScreen(session: _session),
+        '/settings': (context) => const SettingsScreen(),
+      },
     );
   }
 }
@@ -95,6 +107,16 @@ class _FoundationScreenState extends State<FoundationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: AirShiftColors.textSecondary),
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           Center(
