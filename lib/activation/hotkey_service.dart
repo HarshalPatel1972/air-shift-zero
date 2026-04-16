@@ -30,18 +30,3 @@ class AirShiftHotKeyService {
     );
   }
 }
-
-@pragma('vm:entry-point')
-Tile? onTileClicked(Tile tile) {
-  final session = AirShiftSession.instance;
-  if (session.currentState == SessionState.idle) {
-    OverlayManager.show();
-    session.start();
-    tile.tileStatus = TileStatus.active;
-  } else {
-    session.end();
-    OverlayManager.hide();
-    tile.tileStatus = TileStatus.inactive;
-  }
-  return tile;
-}
