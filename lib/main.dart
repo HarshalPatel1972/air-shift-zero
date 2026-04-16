@@ -5,14 +5,40 @@ import 'dart:io';
 
 import 'app.dart';
 import 'overlay/overlay_widget.dart';
+import 'activation/quick_tile_service.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
+
+import 'activation/hotkey_service.dart';
+import 'session/airshift_session.dart';
+import 'session/session_state.dart';
+import 'overlay/overlay_manager.dart';
+
+// Global session for activation triggers
+final globalSession = AirShiftSession.instance;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  // Phase 3 - Desktop window setup
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
     await acrylic.Window.initialize();
   }
+
+  // Phase 7 - Activation Setup
+  AirShiftQuickTileService.initialize();
+  await hotKeyManager.ensureInitialized();
+  
+  await AirShiftHotKeyService.initialize(() async {
+    final session = AirShiftSession.instance;
+    if (session.currentState == SessionState.idle) {
+      await OverlayManager.show();
+      session.start();
+    } else {
+      session.end();
+      await OverlayManager.hide();
+    }
+  });
 
   runApp(const AirShiftApp());
 }

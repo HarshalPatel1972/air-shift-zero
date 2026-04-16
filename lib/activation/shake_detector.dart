@@ -12,16 +12,19 @@ class AirShiftShakeDetector {
   void start() {
     _detector = ShakeDetector.autoStart(
       onPhoneShake: () async {
-        if (session.currentState == SessionState.idle) {
+        final currentState = session.currentState;
+        if (currentState == SessionState.idle) {
+          debugPrint('Shake detected: Starting session');
           await OverlayManager.show();
           session.start();
         } else {
+          debugPrint('Shake detected: Ending session');
           session.end();
           await OverlayManager.hide();
         }
       },
-      shakeThresholdGravity: 2.7, // Approx 26 m/s^2, can be tuned
-      shakeSlopTimeMS: 500,
+      shakeThresholdGravity: 2.7, // Exactly 2.7G as per spec
+      shakeSlopTimeMS: 500,       // 500ms debounce
       shakeCountResetTime: 3000,
     );
   }

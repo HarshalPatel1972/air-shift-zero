@@ -14,6 +14,11 @@ import '../transfer/checksum.dart';
 import 'package:uuid/uuid.dart';
 
 class AirShiftSession {
+  // Singleton pattern for activation triggers
+  static final AirShiftSession instance = AirShiftSession._internal();
+  AirShiftSession._internal();
+  factory AirShiftSession() => instance;
+
   SessionState _currentState = SessionState.idle;
   SessionState get currentState => _currentState;
 
