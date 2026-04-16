@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../gesture/gesture_detector.dart';
 import '../gesture/gesture_state_machine.dart';
 import 'session_state.dart';
@@ -137,7 +138,7 @@ class AirShiftSession {
 
   void _initiateTransfer() async {
     if (_lastNearbyDevices.isEmpty) {
-      print('No target devices nearby for transfer');
+      debugPrint('No target devices nearby for transfer');
       return;
     }
 
@@ -145,10 +146,18 @@ class AirShiftSession {
     _stateController.add(_currentState);
 
     final target = _lastNearbyDevices.first;
-    print('Initiating transfer to: ${target.sessionName} @ ${target.ipAddress}');
+    debugPrint('Initiating transfer to: ${target.sessionName} @ ${target.ipAddress}');
 
-    // Mock file for verification until Phase 6 file selection is fully connected
-    // This part should pick the actual selected files from the overlay
+    // File size based timeout logic
+    // Duration timeout = _getTransferTimeout(fileSize);
+    
+    // Implementation of actual file client call would go here in E2E setup
+  }
+
+  Duration _getTransferTimeout(int fileSizeBytes) {
+    if (fileSizeBytes < 10 * 1024 * 1024) return const Duration(seconds: 10);
+    if (fileSizeBytes < 1024 * 1024 * 1024) return const Duration(seconds: 30);
+    return const Duration(seconds: 60);
   }
 
   void dispose() {

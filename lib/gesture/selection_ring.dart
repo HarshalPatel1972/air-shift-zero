@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/colors.dart';
 import '../theme/motion.dart';
+import '../settings/settings_model.dart';
 
 class SelectionRing extends StatefulWidget {
   final Offset position;
@@ -35,6 +37,9 @@ class _SelectionRingState extends State<SelectionRing> with TickerProviderStateM
     );
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
+        if (AirShiftSettings.instance.hapticFeedback) {
+          HapticFeedback.selectionClick();
+        }
         widget.onComplete();
       }
     });

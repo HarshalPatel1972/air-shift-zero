@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../session/session_state.dart' as session;
+import '../settings/settings_model.dart';
 import 'gesture_detector.dart';
 
 class GestureStateMachine {
@@ -30,6 +32,7 @@ class GestureStateMachine {
         if (event.gesture == session.Gesture.fist) {
           _updateState(session.GestureState.holding);
           _startHoldingTimeout();
+          _triggerHaptic(HapticFeedback.mediumImpact);
         } else if (event.gesture == session.Gesture.singleFinger) {
           _selectionController.add(Offset(event.x, event.y));
         } else if (event.gesture == session.Gesture.none) {
@@ -42,12 +45,19 @@ class GestureStateMachine {
         if (event.gesture == session.Gesture.openPalm) {
           // THE ONLY VALID TRANSFER TRIGGER
           _transferTriggerController.add(null);
+          _triggerHaptic(HapticFeedback.heavyImpact);
           _cancelHoldingTimeout();
           _updateState(session.GestureState.idle);
         } else if (event.gesture == session.Gesture.none) {
           // User moved away
         }
         break;
+    }
+  }
+
+  void _triggerHaptic(Future<void> Function() function) {
+    if (AirShiftSettings.instance.hapticFeedback) {
+      function();
     }
   }
 

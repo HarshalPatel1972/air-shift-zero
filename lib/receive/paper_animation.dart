@@ -74,7 +74,7 @@ class _AirShiftPaperAnimationState extends State<AirShiftPaperAnimation> with Ti
                 isWrapped: widget.state != PaperState.open,
               ),
               child: Container(
-                padding: const EdgeInsets:all(20),
+                padding: const EdgeInsets.all(20),
                 constraints: const BoxConstraints(maxWidth: 300, maxHeight: 400),
                 child: widget.state == PaperState.open ? widget.child : null,
               ),

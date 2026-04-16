@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:basic_utils/basic_utils.dart';
@@ -89,7 +90,7 @@ class AirShiftTransferServer {
       if (manifest != null) {
         _eventController.add(IncomingTransferEvent(manifest, isFailed: true));
       }
-      print('Transfer Conflict: $e');
+      debugPrint('Transfer Conflict: $e');
     } finally {
       socket.destroy();
     }

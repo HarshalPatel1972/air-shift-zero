@@ -1,40 +1,42 @@
 import 'dart:async';
-import 'package:nsd/nsd.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:nsd/nsd.dart' as nsd;
 import 'airshift_device.dart';
-import 'dart:io';
 
 class AirShiftMdnsService {
-  Registration? _registration;
-  Discovery? _discovery;
+  nsd.Registration? _registration;
+  nsd.Discovery? _discovery;
   final _devicesController = StreamController<List<AirShiftDevice>>.broadcast();
   final Map<String, AirShiftDevice> _discoveredDevices = {};
 
   Stream<List<AirShiftDevice>> get devicesStream => _devicesController.stream;
 
   Future<void> startAnnouncing(String sessionName, int port, {String? thumbprint}) async {
-    _registration = await register(Service(
+    _registration = await nsd.register(nsd.Service(
       name: sessionName,
       type: '_airshift._tcp',
       port: port,
-      txt: thumbprint != null ? {'thumb': thumbprint} : null,
+      txt: thumbprint != null ? {'thumb': Uint8List.fromList(utf8.encode(thumbprint))} : null,
     ));
   }
 
   Future<void> stopAnnouncing() async {
     if (_registration != null) {
-      await unregister(_registration!);
+      await nsd.unregister(_registration!);
       _registration = null;
     }
   }
 
   Future<void> startDiscovery() async {
-    _discovery = await startDiscovery('_airshift._tcp');
+    _discovery = await nsd.startDiscovery('_airshift._tcp');
     _discovery?.addListener(() {
       _updateDevices(_discovery!.services);
     });
   }
 
-  void _updateDevices(List<Service> services) async {
+  void _updateDevices(List<nsd.Service> services) {
     for (var service in services) {
       if (service.name == null) continue;
       
@@ -48,7 +50,9 @@ class AirShiftMdnsService {
       }
 
       if (ip != null) {
-        final thumb = service.txt != null ? utf8.decode(service.txt!['thumb'] as List<int>) : null;
+        final thumb = service.txt != null && service.txt!['thumb'] != null 
+            ? utf8.decode(service.txt!['thumb']!) 
+            : null;
         final device = AirShiftDevice(
           sessionName: service.name!,
           ipAddress: ip,
@@ -63,7 +67,7 @@ class AirShiftMdnsService {
 
   Future<void> stopDiscovery() async {
     if (_discovery != null) {
-      await stopDiscovery(_discovery!);
+      await nsd.stopDiscovery(_discovery!);
       _discovery = null;
     }
     _discoveredDevices.clear();

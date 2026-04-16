@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shake/shake.dart';
 import '../session/airshift_session.dart';
 import '../session/session_state.dart';

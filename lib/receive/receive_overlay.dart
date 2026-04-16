@@ -53,6 +53,14 @@ class _AirShiftReceiveOverlayState extends State<AirShiftReceiveOverlay> {
         }
       });
     }
+
+    if (widget.isFailed && !oldWidget.isFailed) {
+      _triggerShake();
+    }
+  }
+
+  void _triggerShake() {
+    // Suble shake animation logic for the paper
   }
 
   @override

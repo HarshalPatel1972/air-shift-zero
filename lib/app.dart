@@ -12,6 +12,9 @@ import 'activation/shake_detector.dart';
 import 'settings/settings_screen.dart';
 import 'settings/permission_explainer.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:flutter/foundation.dart';
+import 'session/airshift_session.dart';
 
 class AirShiftApp extends StatefulWidget {
   const AirShiftApp({super.key});

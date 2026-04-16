@@ -32,7 +32,7 @@ void main() async {
 
   // Phase 7 - Activation Setup
   AirShiftQuickTileService.initialize();
-  await hotKeyManager.ensureInitialized();
+  // hotKeyManager does not have ensureInitialized in some versions, initialization handled in service
   
   await AirShiftHotKeyService.initialize(() async {
     final session = AirShiftSession.instance;

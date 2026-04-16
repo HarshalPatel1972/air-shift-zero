@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:quick_settings/quick_settings.dart';
 import '../session/airshift_session.dart';
 import '../session/session_state.dart';
@@ -14,7 +15,7 @@ class AirShiftQuickTileService {
 }
 
 @pragma('vm:entry-point')
-void onTileClicked() async {
+void onTileClicked(Tile tile) async {
   final session = AirShiftSession.instance;
   if (session.currentState == SessionState.idle) {
     await OverlayManager.show();
@@ -26,11 +27,11 @@ void onTileClicked() async {
 }
 
 @pragma('vm:entry-point')
-void onTileAdded() {
-  print('Air Shift Tile Added');
+void onTileAdded(Tile tile) {
+  debugPrint('Air Shift Tile Added');
 }
 
 @pragma('vm:entry-point')
-void onTileRemoved() {
-  print('Air Shift Tile Removed');
+void onTileRemoved(Tile tile) {
+  debugPrint('Air Shift Tile Removed');
 }
