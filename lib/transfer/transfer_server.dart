@@ -25,7 +25,9 @@ class AirShiftTransferServer {
   Stream<IncomingTransferEvent> get eventStream => _eventController.stream;
   String? get certThumbprint {
     if (_certPem == null) return null;
-    return CryptoUtils.getHash(Uint8List.fromList(utf8.encode(_certPem!)));
+    // Standard Fingerprint: SHA-256 of the DER (binary) certificate
+    final derBytes = X509Utils.decodePEM(_certPem!).first.bytes;
+    return CryptoUtils.getHash(derBytes, algorithm: 'SHA-256');
   }
 
   Future<void> start(int port) async {
