@@ -6,6 +6,8 @@ import 'gesture/hand_cursor.dart';
 import 'gesture/selection_ring.dart';
 import 'session/airshift_session.dart';
 import 'session/session_state.dart';
+import 'overlay/overlay_manager.dart';
+import 'activation/shake_detector.dart';
 
 class AirShiftApp extends StatefulWidget {
   const AirShiftApp({super.key});
@@ -16,10 +18,24 @@ class AirShiftApp extends StatefulWidget {
 
 class _AirShiftAppState extends State<AirShiftApp> {
   final _session = AirShiftSession();
+  late AirShiftShakeDetector _shakeDetector;
+
+  @override
+  void initState() {
+    super.initState();
+    _shakeDetector = AirShiftShakeDetector(session: _session);
+    _shakeDetector.start();
+    _requestPermissions();
+  }
+
+  Future<void> _requestPermissions() async {
+    await OverlayManager.requestPermissions();
+  }
 
   @override
   void dispose() {
     _session.dispose();
+    _shakeDetector.stop();
     super.dispose();
   }
 
