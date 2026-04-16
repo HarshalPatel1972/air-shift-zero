@@ -52,7 +52,6 @@ dependencies:
   window_manager: ^0.5.1
   flutter_acrylic: ^1.1.4
   receive_sharing_intent: ^1.8.1
-  shake: ^1.0.1
   basic_utils: ^5.8.2
   pointycastle: ^4.0.0
   path: ^1.9.1
