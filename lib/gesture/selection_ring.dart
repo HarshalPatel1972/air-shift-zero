@@ -1,18 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../theme/colors.dart';
 import '../theme/motion.dart';
-import '../settings/settings_model.dart';
 
 class SelectionRing extends StatefulWidget {
   final Offset position;
-  final bool isCompleted;
   final VoidCallback onComplete;
 
   const SelectionRing({
     super.key,
     required this.position,
-    this.isCompleted = false,
     required this.onComplete,
   });
 
@@ -20,30 +17,25 @@ class SelectionRing extends StatefulWidget {
   State<SelectionRing> createState() => _SelectionRingState();
 }
 
-class _SelectionRingState extends State<SelectionRing> with TickerProviderStateMixin {
+class _SelectionRingState extends State<SelectionRing> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _animation;
-  Offset? _lastPosition;
+  Offset? _startPosition;
 
   @override
   void initState() {
     super.initState();
+    _startPosition = widget.position;
     _controller = AnimationController(
       vsync: this,
       duration: AirShiftMotion.selectionFill,
     );
-    _animation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.linear),
-    );
+
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        if (AirShiftSettings.instance.hapticFeedback) {
-          HapticFeedback.selectionClick();
-        }
         widget.onComplete();
       }
     });
-    _lastPosition = widget.position;
+
     _controller.forward();
   }
 
@@ -51,16 +43,19 @@ class _SelectionRingState extends State<SelectionRing> with TickerProviderStateM
   void didUpdateWidget(SelectionRing oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    // Jitter tolerance: 10px
-    if ((widget.position - _lastPosition!).distance > 10) {
-      _controller.reset();
-      _controller.forward();
-      _lastPosition = widget.position;
+    // Phase 2 - Jitter Tolerance (10px threshold)
+    if (_startPosition != null) {
+      final difference = (widget.position - _startPosition!).distance;
+      if (difference > 10.0) {
+        _resetTimer();
+      }
     }
+  }
 
-    if (widget.isCompleted) {
-      _controller.stop();
-    }
+  void _resetTimer() {
+    _startPosition = widget.position;
+    _controller.reset();
+    _controller.forward();
   }
 
   @override
@@ -72,17 +67,17 @@ class _SelectionRingState extends State<SelectionRing> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      left: widget.position.dx - 30,
-      top: widget.position.dy - 30,
+      left: widget.position.dx - 40,
+      top: widget.position.dy - 40,
       child: AnimatedBuilder(
-        animation: _animation,
+        animation: _controller,
         builder: (context, child) {
           return CustomPaint(
-            painter: RingPainter(
-              progress: 1.0 - _animation.value,
-              isCompleted: widget.isCompleted,
+            size: const Size(80, 80),
+            painter: _RingPainter(
+              progress: _controller.value,
+              color: AirShiftColors.bluePrimary,
             ),
-            size: const Size(60, 60),
           );
         },
       ),
@@ -90,36 +85,46 @@ class _SelectionRingState extends State<SelectionRing> with TickerProviderStateM
   }
 }
 
-class RingPainter extends CustomPainter {
-  final double progress;
-  final bool isCompleted;
+class _RingPainter extends CustomPainter {
+  final double progress; // 0.0 to 1.0 (shrinking)
+  final Color color;
 
-  RingPainter({required this.progress, required this.isCompleted});
+  _RingPainter({required this.progress, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
+    final baseRadius = size.width / 2 - 4;
     
-    final paint = Paint()
-      ..color = isCompleted ? AirShiftColors.bluePrimary : AirShiftColors.bluePrimary.withOpacity(0.5)
+    // The spec says shrinking from 100% to 0%
+    final currentRadius = baseRadius * (1.0 - progress);
+
+    final bgPaint = Paint()
+      ..color = color.withOpacity(0.1)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    if (!isCompleted) {
-      // Draw background ring (dim)
-      canvas.drawCircle(center, radius, paint..color = paint.color.withOpacity(0.2));
+    final fillPaint = Paint()
+      ..color = color.withOpacity(0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+
+    // Outer faint ring for boundary
+    canvas.drawCircle(center, baseRadius, bgPaint);
+
+    // Shrinking active ring
+    if (currentRadius > 0) {
+      canvas.drawCircle(center, currentRadius, fillPaint);
       
-      // Draw shrinking ring
-      final shrinkingRadius = radius * (1.0 - progress);
-      canvas.drawCircle(center, shrinkingRadius, paint..color = AirShiftColors.bluePrimary);
-    } else {
-      // Solid outline
-      canvas.drawCircle(center, radius, paint);
+      // Add a subtle glow at the edge of the shrinking ring
+      final glowPaint = Paint()
+        ..color = color.withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawCircle(center, currentRadius, glowPaint);
     }
   }
 
   @override
-  bool shouldRepaint(RingPainter oldDelegate) => 
-    oldDelegate.progress != progress || oldDelegate.isCompleted != isCompleted;
+  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }
