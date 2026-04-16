@@ -1,34 +1,48 @@
 import 'dart:async';
+import '../gesture/gesture_detector.dart';
+import '../gesture/gesture_state_machine.dart';
 import 'session_state.dart';
 
 class AirShiftSession {
   SessionState _currentState = SessionState.idle;
   SessionState get currentState => _currentState;
 
+  final detector = AirShiftGestureDetector();
+  final stateMachine = GestureStateMachine();
+
   final _stateController = StreamController<SessionState>.broadcast();
   Stream<SessionState> get stateStream => _stateController.stream;
 
+  StreamSubscription? _gestureSubscription;
+
   /// Starts an Air Shift session.
-  /// Sets state to active, and would start camera, BLE, and mDNS in later phases.
-  void start() {
+  void start() async {
     if (_currentState != SessionState.idle) return;
     
     _currentState = SessionState.active;
     _stateController.add(_currentState);
     
-    // TODO: Phase 2 - Start Camera
+    // Phase 2 - Start Camera and Detector
+    await detector.initialize();
+    _gestureSubscription = detector.gestureStream.listen((event) {
+      stateMachine.onGestureEvent(event);
+      onGestureEvent(event.gesture);
+    });
+    
     // TODO: Phase 4 - Start mDNS + BLE
   }
 
   /// Ends an Air Shift session.
-  /// Sets state to idle, and would EXPLICITLY stop camera, BLE, and mDNS in later phases.
-  void end() {
+  void end() async {
     if (_currentState == SessionState.idle) return;
 
     _currentState = SessionState.idle;
     _stateController.add(_currentState);
 
-    // TODO: Phase 2 - Release Camera
+    // Phase 2 - Release Camera
+    await _gestureSubscription?.cancel();
+    await detector.dispose();
+
     // TODO: Phase 4 - Stop mDNS + BLE
   }
 
@@ -36,30 +50,22 @@ class AirShiftSession {
   void onGestureEvent(Gesture gesture) {
     if (_currentState == SessionState.idle) return;
 
-    // This logic will be fleshed out in Phase 2
-    switch (gesture) {
-      case Gesture.singleFinger:
-        // Handle cursor move/select
-        break;
-      case Gesture.fist:
-        if (_currentState == SessionState.active) {
-          _currentState = SessionState.holding;
-          _stateController.add(_currentState);
-        }
-        break;
-      case Gesture.openPalm:
-        if (_currentState == SessionState.holding) {
-          _currentState = SessionState.transferring;
-          _stateController.add(_currentState);
-          // Trigger transfer logic
-        }
-        break;
-      case Gesture.none:
-        break;
+    // Critical Rule enforced in GestureStateMachine
+    final gState = stateMachine.currentState;
+    
+    if (gState == GestureState.holding && _currentState != SessionState.holding) {
+      _currentState = SessionState.holding;
+      _stateController.add(_currentState);
+    } else if (gState == GestureState.idle && _currentState != SessionState.active) {
+       _currentState = SessionState.active;
+       _stateController.add(_currentState);
     }
   }
 
   void dispose() {
+    _gestureSubscription?.cancel();
+    detector.dispose();
+    stateMachine.dispose();
     _stateController.close();
   }
 }
