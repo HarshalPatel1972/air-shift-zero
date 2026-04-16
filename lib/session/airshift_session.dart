@@ -12,6 +12,7 @@ import '../transfer/transfer_server.dart';
 import '../transfer/transfer_client.dart';
 import '../transfer/transfer_manifest.dart';
 import '../transfer/checksum.dart';
+import '../transfer/screenshot_service.dart';
 import 'package:uuid/uuid.dart';
 
 class AirShiftSession {
@@ -50,6 +51,7 @@ class AirShiftSession {
   StreamSubscription? _gestureSubscription;
   StreamSubscription? _mdnsSubscription;
   List<AirShiftDevice> _lastNearbyDevices = [];
+  DateTime _lastSnapTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Starts an Air Shift session.
   void start() async {
@@ -130,9 +132,25 @@ class AirShiftSession {
        _ble.stopScan();
     }
 
-    // Phase 5 - Transfer Trigger (Palm after Fist)
+    // Phase 5 - Transfer Trigger (Palm after Fist) or Screenshot (Victory)
     if (prevState == SessionState.holding && gesture == Gesture.openPalm) {
       _initiateTransfer();
+    } else if (gesture == Gesture.victory && prevState != SessionState.idle) {
+      _captureScreenshot();
+    }
+  }
+
+  void _captureScreenshot() async {
+    // Prevent double triggering
+    if (DateTime.now().difference(_lastSnapTime).inSeconds < 3) return;
+    _lastSnapTime = DateTime.now();
+
+    debugPrint('Victory Gesture: Taking screenshot...');
+    final file = await AirShiftScreenshotService.instance.capture();
+    if (file != null) {
+      _selectedFiles.add(file.path);
+      // Logic to notify UI of new file
+       _incomingTransferController.add(null); // Ping listeners
     }
   }
 
