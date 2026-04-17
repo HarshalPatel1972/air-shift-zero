@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  camera_windows
   flutter_acrylic
   hotkey_manager_windows
   nsd_windows

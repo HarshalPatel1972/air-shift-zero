@@ -13,6 +13,7 @@ import '../transfer/transfer_client.dart';
 import '../transfer/transfer_manifest.dart';
 import '../transfer/checksum.dart';
 import '../transfer/screenshot_service.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 class AirShiftSession {
@@ -125,6 +126,7 @@ class AirShiftSession {
     if (gState == GestureState.holding && _currentState != SessionState.holding) {
       _currentState = SessionState.holding;
       _stateController.add(_currentState);
+      HapticFeedback.mediumImpact(); // Grab vibration
       _ble.startScan();
     } else if (gState == GestureState.idle && _currentState != SessionState.active) {
        _currentState = SessionState.active;
@@ -134,8 +136,10 @@ class AirShiftSession {
 
     // Phase 5 - Transfer Trigger (Palm after Fist) or Screenshot (Victory)
     if (prevState == SessionState.holding && gesture == Gesture.openPalm) {
+      HapticFeedback.heavyImpact(); // Throw vibration
       _initiateTransfer();
     } else if (gesture == Gesture.victory && prevState != SessionState.idle) {
+      HapticFeedback.vibrate(); // Screenshot vibration
       _captureScreenshot();
     }
   }

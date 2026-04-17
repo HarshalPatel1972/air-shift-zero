@@ -68,8 +68,13 @@ class AirShiftGestureDetector {
       }
 
       await _cameraController?.initialize();
-      _cameraController?.startImageStream(_processCameraImage);
-      debugPrint('Gesture Engine: Camera active trên ${defaultTargetPlatform.name}');
+      
+      // ONLY start image stream on Mobile (Unsupported on Windows/Desktop)
+      if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
+        _cameraController?.startImageStream(_processCameraImage);
+      }
+      
+      debugPrint('Gesture Engine: Camera active on ${defaultTargetPlatform.name}');
     } catch (e) {
       debugPrint('Gesture Engine Initialization Error: $e');
     }
