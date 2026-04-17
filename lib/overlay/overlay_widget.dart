@@ -112,24 +112,25 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
                   ),
                 ),
                 
-                // Camera Feedback / Hologram Preview (Desktop only)
-                if (defaultTargetPlatform != TargetPlatform.android)
-                  Positioned(
-                    top: 20,
-                    right: 20,
-                    child: Container(
-                      width: 160,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AirShiftColors.bluePrimary.withOpacity(0.3)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: const CameraPreviewWidget(), // Helper added below
-                      ),
+                // Camera Feedback / Hologram Preview
+                Positioned(
+                  top: 20,
+                  right: 20,
+                  child: Container(
+                    width: 160,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AirShiftColors.bluePrimary.withOpacity(0.3)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: defaultTargetPlatform == TargetPlatform.windows
+                          ? Webview(_session.detector.webviewController)
+                          : const CameraPreviewWidget(),
                     ),
                   ),
+                ),
 
                 // Device Radar Background
                 const Center(

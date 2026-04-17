@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:ui';
+import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:webview_windows/webview_windows.dart';
 import '../session/session_state.dart' as session;
 
 class GestureEvent {
@@ -18,18 +20,25 @@ class GestureEvent {
 class AirShiftGestureDetector {
   CameraController? _cameraController;
   PoseDetector? _poseDetector;
+  final WebviewController _webviewController = WebviewController();
   bool _isProcessing = false;
+  bool _isWebviewInitialized = false;
   
   final _gestureController = StreamController<GestureEvent>.broadcast();
   Stream<GestureEvent> get gestureStream => _gestureController.stream;
 
   CameraController? get cameraController => _cameraController;
+  WebviewController get webviewController => _webviewController;
 
   double _smoothX = 0;
   double _smoothY = 0;
 
   /// Initializes the camera and detector.
   Future<void> initialize() async {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return _initializeDesktopBridge();
+    }
+
     // 1. Handle Permissions (Mobile)
     if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
       final status = await Permission.camera.status;
@@ -60,19 +69,13 @@ class AirShiftGestureDetector {
       );
 
       // Only Initialize ML Kit on Mobile
-      if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
-        _poseDetector = PoseDetector(options: PoseDetectorOptions(
-          mode: PoseDetectionMode.stream,
-          model: PoseDetectionModel.accurate,
-        ));
-      }
+      _poseDetector = PoseDetector(options: PoseDetectorOptions(
+        mode: PoseDetectionMode.stream,
+        model: PoseDetectionModel.accurate,
+      ));
 
       await _cameraController?.initialize();
-      
-      // ONLY start image stream on Mobile (Unsupported on Windows/Desktop)
-      if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
-        _cameraController?.startImageStream(_processCameraImage);
-      }
+      _cameraController?.startImageStream(_processCameraImage);
       
       debugPrint('Gesture Engine: Camera active on ${defaultTargetPlatform.name}');
     } catch (e) {
@@ -80,12 +83,51 @@ class AirShiftGestureDetector {
     }
   }
 
-  void _processCameraImage(CameraImage image) async {
-    // Skip ML processing on Windows/Desktop (Native plugin limitation)
-    if (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS) {
-       return; 
-    }
+  Future<void> _initializeDesktopBridge() async {
+    try {
+      await _webviewController.initialize();
+      await _webviewController.setBackgroundColor(Color(0x00000000));
+      
+      _webviewController.webMessageReceived.listen((message) {
+        try {
+          final data = json.decode(message);
+          if (data['type'] == 'landmarks') {
+            final double rawX = data['x'];
+            final double rawY = data['y'];
+            final bool isFist = data['isFist'];
 
+            // Flip X for mirror effect, map to screen coords
+            // (Webview gives 0.0-1.0 normalized)
+            // We use a virtual 1280x720 space for consistency
+            double targetX = (1.0 - rawX) * 1280;
+            double targetY = rawY * 720;
+
+            _smoothX = lerpDouble(_smoothX, targetX, 0.45) ?? targetX;
+            _smoothY = lerpDouble(_smoothY, targetY, 0.45) ?? targetY;
+
+            _gestureController.add(GestureEvent(
+              isFist ? session.Gesture.fist : session.Gesture.singleFinger,
+              x: _smoothX,
+              y: _smoothY,
+            ));
+          }
+        } catch (e) {
+          debugPrint('Bridge Error: $e');
+        }
+      });
+
+      // Load the local gesture bridge
+      // For local development/assets, we use the file scheme
+      // Note: In production, assets are extracted to a local path or served via localhost
+      await _webviewController.loadUrl('assets/web/gesture_bridge.html');
+      _isWebviewInitialized = true;
+      debugPrint('Gesture Engine: Windows Holographic Bridge active');
+    } catch (e) {
+      debugPrint('Desktop Bridge Init Failed: $e');
+    }
+  }
+
+  void _processCameraImage(CameraImage image) async {
     if (_isProcessing || _poseDetector == null) return;
     _isProcessing = true;
 
@@ -179,7 +221,6 @@ class AirShiftGestureDetector {
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (format == null) return null;
 
-    // YUV Concat Fix for Android - Ensuring 100% data pass
     final WriteBuffer allBytes = WriteBuffer();
     for (final Plane plane in image.planes) {
       allBytes.putUint8List(plane.bytes);
@@ -199,9 +240,14 @@ class AirShiftGestureDetector {
 
   Future<void> dispose() async {
     try {
-      await _cameraController?.stopImageStream();
+      if (_cameraController != null) {
+         await _cameraController?.stopImageStream();
+         await _cameraController?.dispose();
+      }
     } catch (_) {}
-    await _cameraController?.dispose();
+    if (_isWebviewInitialized) {
+      await _webviewController.dispose();
+    }
     await _poseDetector?.close();
     await _gestureController.close();
   }
