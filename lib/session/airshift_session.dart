@@ -56,6 +56,11 @@ class AirShiftSession {
   StreamSubscription? _mdnsSubscription;
   List<AirShiftDevice> _lastNearbyDevices = [];
   DateTime _lastSnapTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _isLocalGrabbed = false;
+  bool get isLocalGrabbed => _isLocalGrabbed;
+
+  final _grabEventController = StreamController<bool>.broadcast();
+  Stream<bool> get grabEvent => _grabEventController.stream;
 
   /// Starts an Air Shift session.
   void start() async {
@@ -67,6 +72,7 @@ class AirShiftSession {
     
     // Phase 5 - Start Transfer Server
     await _server.start(49317);
+    _server.onGetGrabbedFile = () => _isLocalGrabbed ? _selectedFiles.last : null;
     
     // Phase 2 - Start Camera and Detector
     await detector.initialize();
@@ -140,12 +146,44 @@ class AirShiftSession {
     }
 
     // Phase 5 - Transfer Trigger (Palm after Fist) or Screenshot (Victory)
-    if (prevState == SessionState.holding && gesture == Gesture.openPalm) {
-      HapticFeedback.heavyImpact(); // Throw vibration
-      _initiateTransfer();
-    } else if (gesture == Gesture.victory && prevState != SessionState.idle) {
+    if (gesture == Gesture.victory && prevState != SessionState.idle) {
       HapticFeedback.vibrate(); // Screenshot vibration
       _captureScreenshot();
+    } else if (gesture == Gesture.fist && DateTime.now().difference(_lastSnapTime).inSeconds < 10) {
+      // GRAB: Fist detected within 10s of local screenshot
+      if (!_isLocalGrabbed) {
+         _isLocalGrabbed = true;
+         _grabEventController.add(true);
+         _updateDiscoveryMetadata();
+         HapticFeedback.mediumImpact();
+         debugPrint('AirShift: Locally Grabbed file!');
+      }
+    } else if (gesture == Gesture.openPalm) {
+      // DROP: Open palm to receive from nearby grabbed device
+      try {
+        final grabbedDevice = _lastNearbyDevices.firstWhere((d) => d.isGrabbed);
+        _receiveFromDevice(grabbedDevice);
+      } catch (e) {
+        // No grabbed device nearby
+      }
+    }
+  }
+
+  void _updateDiscoveryMetadata() {
+    _mdns.startAnnouncing(_currentSessionName!, 49317, 
+      thumbprint: _server.certThumbprint,
+      txt: {'grabbed': _isLocalGrabbed.toString()}
+    );
+  }
+
+  Future<void> _receiveFromDevice(AirShiftDevice device) async {
+    HapticFeedback.heavyImpact();
+    debugPrint('AirShift: Initiating Drop/Receive from ${device.sessionName}');
+    final transfer = await _client.requestTransfer(device);
+    if (transfer != null) {
+      _selectedFiles.add(transfer.path);
+       // Reset local state if we were the one receiving
+       _incomingTransferController.add(null); 
     }
   }
 
