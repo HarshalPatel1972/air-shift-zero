@@ -63,6 +63,11 @@ void main() async {
   }
 
   runApp(const AirShiftApp());
+
+  // Phase 9 - Pre-warm Gesture Engine for instant activation
+  if (Platform.isWindows) {
+    globalSession.detector.initialize();
+  }
 }
 
 @pragma("vm:entry-point")
