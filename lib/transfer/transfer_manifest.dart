@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path/path.dart' as p;
+import 'checksum.dart';
 
 class TransferManifest {
   final String token;
@@ -30,6 +33,19 @@ class TransferManifest {
         mimeType: json['mimeType'],
         checksum: json['checksum'],
       );
+
+  static Future<TransferManifest> fromFile(File file) async {
+    final fileName = p.basename(file.path);
+    final fileSize = await file.length();
+    final checksum = await AirShiftChecksum.computeSHA256(file);
+    return TransferManifest(
+      token: 'grabbed-${DateTime.now().millisecondsSinceEpoch}',
+      fileName: fileName,
+      fileSize: fileSize,
+      mimeType: 'image/png',
+      checksum: checksum,
+    );
+  }
 
   String encode() => jsonEncode(toJson());
   
