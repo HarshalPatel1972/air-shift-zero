@@ -70,24 +70,41 @@ class AirShiftSession {
     _currentState = SessionState.active;
     _stateController.add(_currentState);
     
-    // Phase 5 - Start Transfer Server
-    await _server.start(49317);
-    _server.onGetGrabbedFile = () => _isLocalGrabbed ? _selectedFiles.last : null;
+    debugPrint('AirShift: Starting Session Services...');
+
+    // Phase 1 - Parallel Initialization of all sub-services
+    try {
+      await Future.wait([
+        // Camera Engine
+        detector.initialize().catchError((e) {
+          debugPrint('AirShift: Camera Init Failed: $e');
+        }),
+        // Transfer Server
+        _server.start(49317).catchError((e) {
+           debugPrint('AirShift: Server Init Failed: $e');
+        }),
+        // mDNS Discovery
+        _mdns.startAnnouncing(
+          _currentSessionName!, 
+          49317, 
+          thumbprint: _server.certThumbprint
+        ).catchError((e) {
+           debugPrint('AirShift: mDNS Init Failed: $e');
+        }),
+      ]);
+    } catch (e) {
+      debugPrint('AirShift: Parallel Init Global Exception: $e');
+    }
+
+    // Phase 2 - Finalize UI and Subscriptions
+    _stateController.add(_currentState);
     
-    // Phase 2 - Start Camera and Detector
-    await detector.initialize();
     detector.startWindowEngine();
     _gestureSubscription = detector.gestureStream.listen((event) {
       stateMachine.onGestureEvent(event);
       onGestureEvent(event.gesture);
     });
     
-    // Phase 4 - Start mDNS + BLE
-    await _mdns.startAnnouncing(
-      _currentSessionName!, 
-      49317, 
-      thumbprint: _server.certThumbprint
-    );
     await _mdns.startDiscovery();
     _mdnsSubscription = _mdns.devicesStream.listen((devices) {
       _lastNearbyDevices = _ble.applyProximity(devices);
@@ -98,6 +115,8 @@ class AirShiftSession {
     _server.eventStream.listen((event) {
       _incomingTransferController.add(event.manifest);
     });
+    
+    debugPrint('AirShift: Session Fully Initialized');
   }
 
   /// Ends an Air Shift session.

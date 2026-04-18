@@ -29,11 +29,11 @@ subprojects {
     // It runs during the configuration phase of each subproject
     project.plugins.withType<com.android.build.gradle.BasePlugin> {
         project.extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-            compileSdkVersion(35)
-            buildToolsVersion("35.0.0")
+            compileSdkVersion(36)
+            buildToolsVersion("36.0.0")
             
             defaultConfig {
-                targetSdk = 34
+                targetSdk = 36
             }
         }
     }

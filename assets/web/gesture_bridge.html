@@ -30,8 +30,11 @@
     let cameraStream = null;
 
     function flutterLog(msg) {
+      const data = JSON.stringify({ type: 'log', message: msg });
       if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(JSON.stringify({ type: 'log', message: msg }));
+        window.chrome.webview.postMessage(data);
+      } else if (window.FlutterChannel) {
+        window.FlutterChannel.postMessage(data);
       }
     }
 
@@ -60,7 +63,11 @@
           if (enabled && !cameraStream) {
             flutterLog("Activating Camera Hardware...");
             cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { width: 640, height: 480 } 
+                video: { 
+                  facingMode: "user",
+                  width: { ideal: 640 }, 
+                  height: { ideal: 480 } 
+                } 
             });
             video.srcObject = cameraStream;
             video.onloadeddata = () => {
@@ -81,6 +88,12 @@
           flutterLog("ToggleCamera Error: " + e.toString());
       }
     }
+
+    // Android/Generic Bridge Hook
+    window.dispatchCommand = (cmd) => {
+       if (cmd === 'START') toggleCamera(true);
+       if (cmd === 'STOP') toggleCamera(false);
+    };
 
     if (window.chrome && window.chrome.webview) {
         window.chrome.webview.addEventListener('message', (event) => {
@@ -109,13 +122,19 @@
               isFist: gesture.id === 'fist',
               gesture: gesture.name
             };
-
+            
+            const data = JSON.stringify(message);
             if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(JSON.stringify(message));
+              window.chrome.webview.postMessage(data);
+            } else if (window.FlutterChannel) {
+              window.FlutterChannel.postMessage(data);
             }
           } else {
+            const data = JSON.stringify({ type: 'empty' });
             if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(JSON.stringify({ type: 'empty' }));
+               window.chrome.webview.postMessage(data);
+            } else if (window.FlutterChannel) {
+               window.FlutterChannel.postMessage(data);
             }
           }
         }

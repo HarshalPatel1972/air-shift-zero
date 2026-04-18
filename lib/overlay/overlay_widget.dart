@@ -227,8 +227,21 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
   }
 }
 
-class CameraPreviewWidget extends StatelessWidget {
+class CameraPreviewWidget extends StatefulWidget {
   const CameraPreviewWidget({super.key});
+
+  @override
+  State<CameraPreviewWidget> createState() => _CameraPreviewWidgetState();
+}
+
+class _CameraPreviewWidgetState extends State<CameraPreviewWidget> {
+  @override
+  void initState() {
+    super.initState();
+    AirShiftSession.instance.stateStream.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

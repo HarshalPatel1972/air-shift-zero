@@ -41,16 +41,9 @@ class AirShiftShakeDetector {
   }
 
   void _handleShake() async {
-    final currentState = session.currentState;
-    if (currentState == SessionState.idle) {
-      debugPrint('Shake detected: Starting session');
-      await OverlayManager.show();
-      session.start();
-    } else {
-      debugPrint('Shake detected: Ending session');
-      session.end();
-      await OverlayManager.hide();
-    }
+    // Shake detection is logged but does NOT auto-start the engine.
+    // The user must explicitly press the Start button.
+    debugPrint('Shake detected (no auto-start)');
   }
 
   void stop() {
