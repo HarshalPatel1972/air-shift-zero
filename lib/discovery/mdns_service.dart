@@ -13,12 +13,25 @@ class AirShiftMdnsService {
 
   Stream<List<AirShiftDevice>> get devicesStream => _devicesController.stream;
 
-  Future<void> startAnnouncing(String sessionName, int port, {String? thumbprint}) async {
+  Future<void> startAnnouncing(String sessionName, int port, {String? thumbprint, Map<String, String>? txt}) async {
+    final Map<String, Uint8List> txtData = {};
+    if (thumbprint != null) {
+      txtData['thumb'] = Uint8List.fromList(utf8.encode(thumbprint));
+    }
+    if (txt != null) {
+      txt.forEach((k, v) => txtData[k] = Uint8List.fromList(utf8.encode(v)));
+    }
+
+    // If already registered, unregister first to update
+    if (_registration != null) {
+      await stopAnnouncing();
+    }
+
     _registration = await nsd.register(nsd.Service(
       name: sessionName,
       type: '_airshift._tcp',
       port: port,
-      txt: thumbprint != null ? {'thumb': Uint8List.fromList(utf8.encode(thumbprint))} : null,
+      txt: txtData.isNotEmpty ? txtData : null,
     ));
   }
 
@@ -53,11 +66,17 @@ class AirShiftMdnsService {
         final thumb = service.txt != null && service.txt!['thumb'] != null 
             ? utf8.decode(service.txt!['thumb']!) 
             : null;
+        
+        final isGrabbed = service.txt != null && service.txt!['grabbed'] != null 
+            ? utf8.decode(service.txt!['grabbed']!) == 'true'
+            : false;
+
         final device = AirShiftDevice(
           sessionName: service.name!,
           ipAddress: ip,
           port: service.port ?? 49317,
           thumbprint: thumb,
+          isGrabbed: isGrabbed,
         );
         _discoveredDevices[service.name!] = device;
       }
