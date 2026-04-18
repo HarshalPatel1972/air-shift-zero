@@ -43,6 +43,9 @@ class AirShiftSession {
   final _devicesController = StreamController<List<AirShiftDevice>>.broadcast();
   Stream<List<AirShiftDevice>> get nearbyDevices => _devicesController.stream;
 
+  final _screenshotEventController = StreamController<String>.broadcast();
+  Stream<String> get screenshotEvent => _screenshotEventController.stream;
+
   final Set<String> _selectedFiles = {};
   Set<String> get selectedFiles => _selectedFiles;
 
@@ -67,6 +70,7 @@ class AirShiftSession {
     
     // Phase 2 - Start Camera and Detector
     await detector.initialize();
+    detector.startWindowEngine();
     _gestureSubscription = detector.gestureStream.listen((event) {
       stateMachine.onGestureEvent(event);
       onGestureEvent(event.gesture);
@@ -97,9 +101,10 @@ class AirShiftSession {
     _currentState = SessionState.idle;
     _stateController.add(_currentState);
 
-    // Phase 2 - Release Camera
+    // Phase 2 - Release Camera Hardware
+    detector.stopWindowEngine();
     await _gestureSubscription?.cancel();
-    await detector.dispose();
+    // await detector.dispose();
 
     // Phase 4 - Stop mDNS + BLE
     await _mdns.stopAnnouncing();
@@ -153,6 +158,7 @@ class AirShiftSession {
     final file = await AirShiftScreenshotService.instance.capture();
     if (file != null) {
       _selectedFiles.add(file.path);
+      _screenshotEventController.add(file.path);
       // Logic to notify UI of new file
        _incomingTransferController.add(null); // Ping listeners
     }
@@ -187,5 +193,6 @@ class AirShiftSession {
     _mdns.dispose();
     _stateController.close();
     _devicesController.close();
+    _screenshotEventController.close();
   }
 }
