@@ -193,14 +193,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
-  ffi_leak_tracker:
-    dependency: transitive
-    description:
-      name: ffi_leak_tracker
-      sha256: "4093d4ef9ca06ffe2786e73bfb25e22aa92112b9bb4ec941f11e3e6b61489a97"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.2"
   file:
     dependency: transitive
     description:
@@ -348,18 +340,18 @@ packages:
     dependency: "direct main"
     description:
       name: google_mlkit_commons
-      sha256: "046586b381cdd139f7f6a05ad6998f7e339d061bd70158249907358394b5f496"
+      sha256: "3e69fea4211727732cc385104e675ad1e40b29f12edd492ee52fa108423a6124"
       url: "https://pub.dev"
     source: hosted
-    version: "0.6.1"
+    version: "0.11.1"
   google_mlkit_pose_detection:
     dependency: "direct main"
     description:
       name: google_mlkit_pose_detection
-      sha256: "25027e81b40bd2197ad6f1d4f9a6c153a874cf5c66dbb5ac0a8a704573a79c70"
+      sha256: "9157847e41fff1703b6b16b1af5508cf5def85cad96b7b724394fa9fe386cb8f"
       url: "https://pub.dev"
     source: hosted
-    version: "0.10.0"
+    version: "0.14.1"
   hooks:
     dependency: transitive
     description:
@@ -1085,14 +1077,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.2"
-  win32:
-    dependency: "direct main"
-    description:
-      name: win32
-      sha256: "316d813e24518851c2682b1a57bc7e2e54e9c7b81493d48bef502fea0c17f841"
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.0.1"
   window_manager:
     dependency: "direct main"
     description:

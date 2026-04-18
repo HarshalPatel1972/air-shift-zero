@@ -13,7 +13,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
-  google_mlkit_pose_detection: ^0.10.0
+  google_mlkit_pose_detection: ^0.14.1
   nsd: ^4.0.0
   flutter_blue_plus: ^1.31.0
   flutter_local_notifications: ^17.0.0
@@ -28,7 +28,7 @@ dependencies:
   hotkey_manager: ^0.2.3
   camera: ^0.12.0+1
   camera_windows: ^0.2.6+4
-  google_mlkit_commons: ^0.6.1
+  google_mlkit_commons: ^0.11.1
   flutter_overlay_window: ^0.5.0
   window_manager: ^0.5.1
   flutter_acrylic: ^1.1.4
@@ -39,7 +39,6 @@ dependencies:
   video_player: ^2.11.1
   quick_settings: ^1.0.1
   shared_preferences: ^2.5.5
-  win32: ^6.0.1
 
 dev_dependencies:
   flutter_test:
