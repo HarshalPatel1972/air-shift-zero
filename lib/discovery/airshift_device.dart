@@ -4,6 +4,7 @@ class AirShiftDevice {
   final int port;
   final String? thumbprint;
   int? rssi;
+  bool isGrabbed;
 
   AirShiftDevice({
     required this.sessionName,
@@ -11,6 +12,7 @@ class AirShiftDevice {
     required this.port,
     this.thumbprint,
     this.rssi,
+    this.isGrabbed = false,
   });
 
   @override
