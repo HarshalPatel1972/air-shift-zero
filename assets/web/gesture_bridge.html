@@ -2,92 +2,151 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <!-- MediaPipe Hand Landmarker -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0"></script>
   <style>
     body { margin: 0; overflow: hidden; background: black; }
-    #video { display: none; }
+    #video { 
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror for natural feel */
+    }
   </style>
 </head>
 <body>
   <video id="video" autoplay playsinline></video>
-  <script>
-    const vision = window.tasksVision;
+  <script type="module">
+    import {
+      HandLandmarker,
+      FilesetResolver
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
     let handLandmarker;
     let video = document.getElementById('video');
     let lastVideoTime = -1;
+    let isTracking = false;
+    let cameraStream = null;
 
-    async function init() {
-      // 1. Initialize Landmarker
-      const filesetResolver = await vision.FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-      );
-      handLandmarker = await vision.HandLandmarker.createFromOptions(filesetResolver, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-          delegate: "GPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1
-      });
+    function flutterLog(msg) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(JSON.stringify({ type: 'log', message: msg }));
+      }
+    }
 
-      // 2. Start Camera
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      video.addEventListener('loadeddata', predict);
-      
-      console.log("Gesture Bridge Initialized");
+    async function initEngine() {
+      try {
+        flutterLog("Pre-warming MediaPipe Engine...");
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+        );
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+        flutterLog("Landmarker Ready.");
+      } catch (e) {
+        flutterLog("ERROR in initEngine: " + e.toString());
+      }
+    }
+
+    async function toggleCamera(enabled) {
+      try {
+          if (enabled && !cameraStream) {
+            flutterLog("Activating Camera Hardware...");
+            cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { width: 640, height: 480 } 
+            });
+            video.srcObject = cameraStream;
+            video.onloadeddata = () => {
+                video.play();
+                isTracking = true;
+                predict();
+            };
+            flutterLog("Camera Hardware Active.");
+          } else if (!enabled && cameraStream) {
+            flutterLog("Deactivating Camera Hardware...");
+            isTracking = false;
+            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
+            video.srcObject = null;
+            flutterLog("Camera Hardware Off.");
+          }
+      } catch (e) {
+          flutterLog("ToggleCamera Error: " + e.toString());
+      }
+    }
+
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.addEventListener('message', (event) => {
+            if (event.data.command === 'START') toggleCamera(true);
+            if (event.data.command === 'STOP') toggleCamera(false);
+        });
     }
 
     async function predict() {
+      if (!isTracking) return;
       if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
-        const results = handLandmarker.detectForVideo(video, performance.now());
         
-        if (results.landmarks && results.landmarks.length > 0) {
-          const hand = results.landmarks[0];
-          // We only need the primary landmarks for the cursor (Index Finger Tip + Palm)
-          // Index Finger Tip is Point 8
-          const indexFinger = hand[8];
+        if (handLandmarker) {
+          const results = handLandmarker.detectForVideo(video, performance.now());
           
-          // Detect "Fist" (Grab) vs "Palm" (Release)
-          // Simple heuristic: If tips of fingers (8, 12, 16, 20) are close to palm (0)
-          const isFist = detectFist(hand);
+          if (results.landmarks && results.landmarks.length > 0) {
+            const hand = results.landmarks[0];
+            const indexFinger = hand[8];
+            const gesture = classifyGesture(hand);
 
-          const message = {
-            type: 'landmarks',
-            x: indexFinger.x,
-            y: indexFinger.y,
-            isFist: isFist
-          };
+            const message = {
+              type: 'landmarks',
+              x: indexFinger.x,
+              y: indexFinger.y,
+              isFist: gesture.id === 'fist',
+              gesture: gesture.name
+            };
 
-          // Send to Flutter
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage(JSON.stringify(message));
-          }
-        } else {
-            // Send empty if no hand detected
             if (window.chrome && window.chrome.webview) {
-                window.chrome.webview.postMessage(JSON.stringify({ type: 'empty' }));
+              window.chrome.webview.postMessage(JSON.stringify(message));
             }
+          } else {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(JSON.stringify({ type: 'empty' }));
+            }
+          }
         }
       }
-      requestAnimationFrame(predict);
+      if (isTracking) requestAnimationFrame(predict);
     }
 
-    function detectFist(landmarks) {
-      // Simple heuristic: distance between finger tips and wrist
-      // Wrist is 0. Tips are 8, 12, 16, 20.
-      const wrist = landmarks[0];
-      const sumDist = [8, 12, 16, 20].reduce((acc, i) => {
-        const d = Math.sqrt(Math.pow(landmarks[i].x - wrist.x, 2) + Math.pow(landmarks[i].y - wrist.y, 2));
-        return acc + d;
-      }, 0);
-      // If fingers are tucked in, total distance is very small
-      return sumDist < 0.6; 
+    function classifyGesture(landmarks) {
+      const isExtended = (tip, base) => landmarks[tip].y < landmarks[base].y;
+      const index = isExtended(8, 6);
+      const middle = isExtended(12, 10);
+      const ring = isExtended(16, 14);
+      const pinky = isExtended(20, 18);
+      const thumb = Math.abs(landmarks[4].x - landmarks[0].x) > 0.08;
+
+      if (index && middle && ring && pinky) return { id: 'palm', name: 'Open Palm' };
+      if (index && middle && !ring && !pinky) return { id: 'victory', name: 'Victory (V)' };
+      if (index && !middle && !ring && !pinky) return { id: 'pointer', name: 'Pointer Finger' };
+      if (!index && !middle && !ring && !pinky) return { id: 'fist', name: 'Closed Fist' };
+
+      return { id: 'unknown', name: 'Tracking...' };
     }
 
-    init();
+    // Diagnostics
+    setInterval(() => {
+        if (isTracking && video.paused && cameraStream) {
+            video.play();
+        }
+    }, 2000);
+
+    initEngine();
   </script>
 </body>
 </html>
