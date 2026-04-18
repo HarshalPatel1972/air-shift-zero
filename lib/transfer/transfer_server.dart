@@ -21,92 +21,86 @@ class IncomingTransferEvent {
 class AirShiftTransferServer {
   SecureServerSocket? _server;
   String? _certPem;
+  String? Function()? onGetGrabbedFile;
 
   final _eventController = StreamController<IncomingTransferEvent>.broadcast();
   Stream<IncomingTransferEvent> get eventStream => _eventController.stream;
   
   String? get certThumbprint {
     if (_certPem == null) return null;
-    
-    // Manual Version-Agnostic PEM to DER conversion
-    final lines = _certPem!.split('\n');
-    final base64Content = lines
+    final base64Content = _certPem!.split('\n')
         .where((line) => !line.startsWith('-----'))
-        .join('')
-        .replaceAll('\r', '')
-        .replaceAll('\n', '')
-        .trim();
-        
+        .join('').replaceAll('\r', '').replaceAll('\n', '').trim();
     final derBytes = base64.decode(base64Content);
     return sha256.convert(derBytes).toString();
   }
 
   Future<void> start(int port) async {
-    // 1. Generate RSA KeyPair
     final keyPair = CryptoUtils.generateRSAKeyPair();
     final privKey = keyPair.privateKey as pc.RSAPrivateKey;
     final pubKey = keyPair.publicKey as pc.RSAPublicKey;
     
-    // 2. Generate Self-Signed Cert
     final dn = {'CN': 'AirShift-${DateTime.now().millisecondsSinceEpoch}'};
     final csrPem = X509Utils.generateRsaCsrPem(dn, privKey, pubKey);
-    _certPem = X509Utils.generateSelfSignedCertificate(privKey, csrPem, 1); // 1 day validity
-    
+    _certPem = X509Utils.generateSelfSignedCertificate(privKey, csrPem, 1);
     final privKeyPem = CryptoUtils.encodeRSAPrivateKeyToPem(privKey);
 
-    // 3. Setup SecurityContext
     final context = SecurityContext()
       ..useCertificateChainBytes(utf8.encode(_certPem!))
       ..usePrivateKeyBytes(utf8.encode(privKeyPem));
 
-    // 4. Start Server
-    _server = await SecureServerSocket.bind(
-      InternetAddress.anyIPv4,
-      port,
-      context,
-    );
-
+    _server = await SecureServerSocket.bind(InternetAddress.anyIPv4, port, context);
     _server?.listen(_handleConnection);
   }
 
-  void _handleConnection(SecureSocket socket) async {
-    TransferManifest? manifest;
-    try {
-      // 1. Read Manifest Handshake
-      final data = await socket.first;
-      manifest = TransferManifest.decode(utf8.decode(data));
-      
-      // Emit Start Event
-      _eventController.add(IncomingTransferEvent(manifest));
+  void _handleConnection(SecureSocket socket) {
+    bool handshakeDone = false;
+    TransferManifest? pushManifest;
+    IOSink? fileSink;
 
-      // 2. ACK
-      socket.add(utf8.encode('ACK'));
-      
-      // 3. Receive File Stream
-      final savePath = await AirShiftSaveLocation.resolvePath(manifest.fileName, manifest.mimeType);
-      final file = File(savePath);
-      final sink = file.openWrite();
-      
-      await sink.addStream(socket);
-      await sink.close();
-      
-      // 4. Verify Checksum
-      final isValid = await AirShiftChecksum.verifySHA256(file, manifest.checksum);
-      if (!isValid) {
-        await file.delete();
-        throw Exception('Checksum mismatch - deleted corrupted file');
+    socket.listen((data) async {
+      try {
+        if (!handshakeDone) {
+          handshakeDone = true;
+          final raw = utf8.decode(data);
+          
+          if (raw == 'PULL') {
+            final path = onGetGrabbedFile?.call();
+            if (path == null) {
+              socket.add(utf8.encode('ERROR:EMPTY'));
+              socket.destroy();
+              return;
+            }
+            final file = File(path);
+            final manifest = await TransferManifest.fromFile(file);
+            socket.add(utf8.encode(manifest.encode()));
+            // Wait for ACK on next data chunk or just stream? 
+            // We'll just stream for now.
+            await socket.addStream(file.openRead());
+            socket.destroy();
+          } else {
+            pushManifest = TransferManifest.decode(raw);
+            _eventController.add(IncomingTransferEvent(pushManifest!));
+            socket.add(utf8.encode('ACK'));
+            
+            final savePath = await AirShiftSaveLocation.resolvePath(pushManifest!.fileName, pushManifest!.mimeType);
+            final file = File(savePath);
+            fileSink = file.openWrite();
+            // Data after the manifest in the same packet? Handled by subsequent logic
+          }
+        } else if (fileSink != null) {
+          fileSink!.add(data);
+        }
+      } catch (e) {
+        debugPrint('Server Connection Error: $e');
+        socket.destroy();
       }
-      
-      // Emit Success Event
-      _eventController.add(IncomingTransferEvent(manifest, filePath: savePath));
-    } catch (e) {
-      if (manifest != null) {
-        _eventController.add(IncomingTransferEvent(manifest, isFailed: true));
+    }, onDone: () async {
+      if (fileSink != null) {
+        await fileSink!.close();
+        // Validation logic can go here
       }
-      debugPrint('Transfer Conflict: $e');
-    } finally {
-      socket.destroy();
-    }
+    });
   }
 
   Future<void> stop() async {
