@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   nsd_windows
   permission_handler_windows
   screen_retriever_windows
+  webview_windows
   window_manager
 )
 

@@ -1,4 +1,4 @@
-name:airshift
+name: airshift
 description: "A new Flutter project."
 publish_to: 'none'
 
@@ -39,6 +39,7 @@ dependencies:
   video_player: ^2.11.1
   quick_settings: ^1.0.1
   shared_preferences: ^2.5.5
+  win32: ^6.0.1
 
 dev_dependencies:
   flutter_test:
