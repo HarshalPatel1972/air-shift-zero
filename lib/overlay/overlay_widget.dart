@@ -2,12 +2,15 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
+import 'package:webview_windows/webview_windows.dart';
+import 'package:screenshot/screenshot.dart';
 import '../theme/colors.dart';
 import '../theme/motion.dart';
 import '../gesture/hand_cursor.dart';
 import '../gesture/selection_ring.dart';
 import '../session/airshift_session.dart';
-import '../session/session_state.dart';
+import '../session/session_state.dart' as session_state;
+import '../transfer/screenshot_service.dart';
 import 'file_grid.dart';
 import 'device_radar.dart';
 
@@ -26,6 +29,7 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
   final _session = AirShiftSession();
   Offset _cursorPos = Offset.zero;
   bool _isFist = false;
+  String _gestureName = "Tracking...";
 
   @override
   void initState() {
@@ -42,9 +46,11 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
     _session.start();
     _session.detector.gestureStream.listen((event) {
       if (mounted) {
+        final size = MediaQuery.of(context).size;
         setState(() {
-          _cursorPos = Offset(event.x, event.y);
-          _isFist = (event.gesture == Gesture.fist);
+          _cursorPos = Offset(event.x * size.width, event.y * size.height);
+          _isFist = (event.gesture == session_state.Gesture.fist);
+          _gestureName = event.gestureName;
         });
       }
     });
@@ -61,7 +67,9 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return Screenshot(
+      controller: AirShiftScreenshotService.instance.screenshotController,
+      child: MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: Colors.transparent,
@@ -126,7 +134,17 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: defaultTargetPlatform == TargetPlatform.windows
-                          ? Webview(_session.detector.webviewController)
+                          ? (_session.detector.webviewController != null
+                              ? Webview(
+                                  _session.detector.webviewController!,
+                                  permissionRequested: (url, kind, isUserInitiated) async {
+                                    if (kind == WebviewPermissionKind.camera) {
+                                      return WebviewPermissionDecision.allow;
+                                    }
+                                    return WebviewPermissionDecision.deny;
+                                  },
+                                )
+                              : const Center(child: CircularProgressIndicator(strokeWidth: 2)))
                           : const CameraPreviewWidget(),
                     ),
                   ),
@@ -172,12 +190,39 @@ class _OverlayWidgetState extends State<OverlayWidget> with SingleTickerProvider
                     ),
                   ),
                 ),
+
+                // Debug STATUS HUD
+                Positioned(
+                  bottom: 15,
+                  left: 15,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'TRACKING: $_gestureName\nPOS: (${_cursorPos.dx.toStringAsFixed(0)}, ${_cursorPos.dy.toStringAsFixed(0)})',
+                        textAlign: TextAlign.left,
+                        style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
           ),
         ),
       ),
+    ),
     );
   }
 }
