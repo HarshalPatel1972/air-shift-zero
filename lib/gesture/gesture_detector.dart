@@ -7,20 +7,24 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:webview_windows/webview_windows.dart';
+import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import '../session/session_state.dart' as session;
 
 class GestureEvent {
   final session.Gesture gesture;
   final double x;
   final double y;
+  final String gestureName;
 
-  GestureEvent(this.gesture, {this.x = 0, this.y = 0});
+  GestureEvent(this.gesture, {this.x = 0, this.y = 0, this.gestureName = ""});
 }
 
 class AirShiftGestureDetector {
   CameraController? _cameraController;
   PoseDetector? _poseDetector;
-  final WebviewController _webviewController = WebviewController();
+  WebviewController? _webviewController;
   bool _isProcessing = false;
   bool _isWebviewInitialized = false;
   
@@ -28,7 +32,7 @@ class AirShiftGestureDetector {
   Stream<GestureEvent> get gestureStream => _gestureController.stream;
 
   CameraController? get cameraController => _cameraController;
-  WebviewController get webviewController => _webviewController;
+  WebviewController? get webviewController => _webviewController;
 
   double _smoothX = 0;
   double _smoothY = 0;
@@ -36,7 +40,10 @@ class AirShiftGestureDetector {
   /// Initializes the camera and detector.
   Future<void> initialize() async {
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      return _initializeDesktopBridge();
+      if (_isWebviewInitialized) return;
+      await _initializeDesktopBridge();
+      // Pre-warm but don't start camera
+      return;
     }
 
     // 1. Handle Permissions (Mobile)
@@ -85,45 +92,80 @@ class AirShiftGestureDetector {
 
   Future<void> _initializeDesktopBridge() async {
     try {
-      await _webviewController.initialize();
-      await _webviewController.setBackgroundColor(Color(0x00000000));
+      _webviewController = WebviewController();
+      await _webviewController!.initialize();
+      await _webviewController!.setBackgroundColor(Color(0x00000000));
       
-      _webviewController.webMessageReceived.listen((message) {
+      _webviewController!.webMessage.listen((message) {
+        debugPrint('RAW BRIDGE MESSAGE type: ${message.runtimeType}, value: $message');
         try {
-          final data = json.decode(message);
+          final dynamic data = (message is String) ? json.decode(message) : message;
           if (data['type'] == 'landmarks') {
-            final double rawX = data['x'];
-            final double rawY = data['y'];
+            final double rawX = (data['x'] as num).toDouble();
+            final double rawY = (data['y'] as num).toDouble();
             final bool isFist = data['isFist'];
+            final String gestureName = data['gesture'] ?? "";
+            
+            session.Gesture currentGesture = session.Gesture.none;
+            if (gestureName.contains('Victory')) {
+              currentGesture = session.Gesture.victory;
+            } else if (gestureName.contains('Open Palm')) {
+              currentGesture = session.Gesture.openPalm;
+            } else if (gestureName.contains('Closed Fist') || data['isFist'] == true) {
+              currentGesture = session.Gesture.fist;
+            } else if (gestureName.contains('Pointer')) {
+              currentGesture = session.Gesture.singleFinger;
+            }
+            
+            if (DateTime.now().millisecond % 500 < 50) {
+              debugPrint('Gesture Engine: Landmarks received (x: ${rawX.toStringAsFixed(2)}, y: ${rawY.toStringAsFixed(2)}, gesture: $gestureName, enum: ${currentGesture.name})');
+            }
 
-            // Flip X for mirror effect, map to screen coords
-            // (Webview gives 0.0-1.0 normalized)
-            // We use a virtual 1280x720 space for consistency
-            double targetX = (1.0 - rawX) * 1280;
-            double targetY = rawY * 720;
+            double targetX = (1.0 - rawX);
+            double targetY = rawY;
 
             _smoothX = lerpDouble(_smoothX, targetX, 0.45) ?? targetX;
             _smoothY = lerpDouble(_smoothY, targetY, 0.45) ?? targetY;
 
             _gestureController.add(GestureEvent(
-              isFist ? session.Gesture.fist : session.Gesture.singleFinger,
+              currentGesture,
               x: _smoothX,
               y: _smoothY,
+              gestureName: gestureName,
             ));
+          } else if (data['type'] == 'log') {
+            debugPrint('JS BRIDGE LOG: ${data['message']}');
           }
         } catch (e) {
-          debugPrint('Bridge Error: $e');
+          debugPrint('Bridge Decoding Error: $e');
         }
+      }, onError: (err) {
+        debugPrint('Bridge Stream Error: $err');
       });
 
-      // Load the local gesture bridge
-      // For local development/assets, we use the file scheme
-      // Note: In production, assets are extracted to a local path or served via localhost
-      await _webviewController.loadUrl('assets/web/gesture_bridge.html');
+      // Asset Extraction Fix: Export HTML to a temp file so Webview can load it natively
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/gesture_bridge.html');
+      final byteData = await rootBundle.load('assets/web/gesture_bridge.html');
+      await tempFile.writeAsBytes(byteData.buffer.asUint8List());
+
+      await _webviewController!.loadUrl(tempFile.uri.toString());
       _isWebviewInitialized = true;
-      debugPrint('Gesture Engine: Windows Holographic Bridge active');
+      debugPrint('Gesture Engine: Windows Holographic Bridge active (via ${tempFile.path})');
     } catch (e) {
       debugPrint('Desktop Bridge Init Failed: $e');
+    }
+  }
+
+  void startWindowEngine() {
+    if (defaultTargetPlatform == TargetPlatform.windows && _isWebviewInitialized) {
+      _webviewController?.postWebMessage(json.encode({'command': 'START'}));
+    }
+  }
+
+  void stopWindowEngine() {
+    if (defaultTargetPlatform == TargetPlatform.windows && _isWebviewInitialized) {
+      _webviewController?.postWebMessage(json.encode({'command': 'STOP'}));
     }
   }
 
@@ -245,8 +287,10 @@ class AirShiftGestureDetector {
          await _cameraController?.dispose();
       }
     } catch (_) {}
-    if (_isWebviewInitialized) {
-      await _webviewController.dispose();
+    if (_isWebviewInitialized && _webviewController != null) {
+      await _webviewController!.dispose();
+      _webviewController = null;
+      _isWebviewInitialized = false;
     }
     await _poseDetector?.close();
     await _gestureController.close();
