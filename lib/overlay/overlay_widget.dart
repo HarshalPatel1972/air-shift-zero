@@ -245,10 +245,6 @@ class _CameraPreviewWidgetState extends State<CameraPreviewWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final detector = AirShiftSession.instance.detector;
-    if (detector.cameraController == null || !detector.cameraController!.value.isInitialized) {
-      return const Center(child: Icon(Icons.videocam_off, color: AirShiftColors.textSecondary));
-    }
-    return CameraPreview(detector.cameraController!);
+    return const Center(child: Icon(Icons.videocam_off, color: AirShiftColors.textSecondary));
   }
 }

@@ -1,418 +1,375 @@
 import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'theme/colors.dart';
-import 'theme/typography.dart';
-
-import 'gesture/hand_cursor.dart';
-import 'gesture/selection_ring.dart';
-import 'gesture/gesture_indicator.dart';
-import 'session/airshift_session.dart';
-import 'session/session_state.dart' as session_state;
-import 'session/session_state.dart';
-import 'overlay/overlay_manager.dart';
-import 'activation/shake_detector.dart';
-
-import 'settings/settings_screen.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
-import 'package:screenshot/screenshot.dart';
-import 'transfer/screenshot_service.dart';
+import 'package:webview_windows/webview_windows.dart';
+import 'session/airshift_session.dart';
+import 'session/session_state.dart';
+import 'theme/colors.dart';
+import 'gesture/hand_cursor.dart';
+import 'gesture/selection_ring.dart';
+import 'settings/settings_screen.dart';
 
-class AirShiftApp extends StatefulWidget {
+// ════════════════════════════════════════════════════════════
+// APP ROOT
+// ════════════════════════════════════════════════════════════
+class AirShiftApp extends StatelessWidget {
   const AirShiftApp({super.key});
-
-  @override
-  State<AirShiftApp> createState() => _AirShiftAppState();
-}
-
-class _AirShiftAppState extends State<AirShiftApp> {
-  final _session = AirShiftSession.instance;
-  late AirShiftShakeDetector _shakeDetector;
-
-  @override
-  void initState() {
-    super.initState();
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      _shakeDetector = AirShiftShakeDetector(session: _session);
-      _shakeDetector.start();
-    }
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        _checkInitialPermissions();
-      }
-    });
-  }
-
-  Future<void> _checkInitialPermissions() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
-    await [
-      Permission.camera,
-      Permission.nearbyWifiDevices,
-      Permission.location,
-    ].request();
-    if (!(await FlutterOverlayWindow.isPermissionGranted())) {
-      await FlutterOverlayWindow.requestPermission();
-    }
-  }
-
-  @override
-  void dispose() {
-    _session.dispose();
-    _shakeDetector.stop();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Air Shift 0',
+      title: 'Air Shift Zero',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF08090A),
+        scaffoldBackgroundColor: const Color(0xFF06060A),
+        fontFamily: 'Outfit',
         useMaterial3: true,
-        fontFamily: 'SF Pro Display',
       ),
+      initialRoute: '/',
       routes: {
-        '/': (context) => FoundationScreen(session: _session),
+        '/': (context) => const FoundationScreen(),
         '/settings': (context) => const SettingsScreen(),
       },
     );
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// MAIN SCREEN
+// ════════════════════════════════════════════════════════════
 class FoundationScreen extends StatefulWidget {
-  final AirShiftSession session;
-  const FoundationScreen({super.key, required this.session});
+  const FoundationScreen({super.key});
 
   @override
   State<FoundationScreen> createState() => _FoundationScreenState();
 }
 
-class _FoundationScreenState extends State<FoundationScreen> with TickerProviderStateMixin {
-  Offset _cursorPos = Offset.zero;
+class _FoundationScreenState extends State<FoundationScreen>
+    with TickerProviderStateMixin {
+  final _session = AirShiftSession.instance;
+
+  late AnimationController _pulseCtrl;
+  late AnimationController _meshCtrl;
+
+  SessionState _state = SessionState.idle;
+  double _rawX = 0.5;
+  double _rawY = 0.5;
   bool _isFist = false;
-  SessionState _sState = SessionState.idle;
-  session_state.Gesture _currentGesture = session_state.Gesture.none;
-  String _gestureName = "Engine Offline";
-  
-  late AnimationController _pulseController;
-  late AnimationController _meshController;
+  String _gestureName = 'Awaiting Neural Link';
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat(reverse: true);
-    _meshController = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat();
 
-    widget.session.detector.gestureStream.listen((event) {
+    _pulseCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 2))
+      ..repeat(reverse: true);
+    _meshCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 20))
+      ..repeat();
+
+    _session.stateStream.listen((s) {
+      if (mounted) setState(() => _state = s);
+    });
+
+    _session.detector.gestureStream.listen((e) {
       if (mounted) {
-        final size = MediaQuery.of(context).size;
         setState(() {
-          _cursorPos = Offset(event.x * size.width, event.y * size.height);
-          _isFist = (event.gesture == session_state.Gesture.fist);
-          _currentGesture = event.gesture;
-          _gestureName = event.gestureName;
+          _rawX = e.x;
+          _rawY = e.y;
+          _isFist = e.gesture == Gesture.fist;
+          _gestureName = e.gestureName.isNotEmpty ? e.gestureName : 'Tracking';
         });
       }
-    });
-    
-    widget.session.stateStream.listen((state) {
-      if (mounted) setState(() => _sState = state);
     });
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
-    _meshController.dispose();
+    _pulseCtrl.dispose();
+    _meshCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final sz = MediaQuery.of(context).size;
+    // Convert normalized 0..1 coords to screen pixels
+    final cursorX = _rawX * sz.width;
+    final cursorY = _rawY * sz.height;
+    final isActive = _state != SessionState.idle;
+
     return Scaffold(
+      backgroundColor: const Color(0xFF06060A),
       body: Stack(
         children: [
-          // 1. Dynamic Mesh Background (The "Industry" Look)
+          // ── 1. Animated mesh gradient ──
           Positioned.fill(
             child: AnimatedBuilder(
-              animation: _meshController,
-              builder: (context, _) => CustomPaint(
-                painter: MeshGradientPainter(progress: _meshController.value),
+              animation: _meshCtrl,
+              builder: (_, __) => CustomPaint(
+                painter: _MeshPainter(t: _meshCtrl.value),
               ),
             ),
           ),
-          
-          // 2. Glassmorphic Surface
+
+          // ── 2. Frost layer ──
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
-              child: Container(color: Colors.black.withOpacity(0.4)),
+              filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+              child: Container(color: const Color(0xFF06060A).withOpacity(0.55)),
             ),
           ),
 
-          // 3. Central Neural Radar
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildNeuralRadar(),
-                const SizedBox(height: 60),
-                _buildSystemBadge(),
-              ],
-            ),
-          ),
-
-          // 4. Floating Header
+          // ── 3. Header ──
           Positioned(
-            top: 60,
-            left: 24,
-            right: 24,
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 24, right: 24,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('AIR SHIFT', style: TextStyle(fontSize: 10, letterSpacing: 5, fontWeight: FontWeight.bold, color: Colors.white54)),
-                    Text('ZERO ARCHITECTURE', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+                    Text('AIR SHIFT',
+                        style: TextStyle(fontSize: 9, letterSpacing: 6,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white.withOpacity(0.35))),
+                    const SizedBox(height: 2),
+                    const Text('Zero Architecture',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   ],
                 ),
-                _buildIconButton(Icons.settings_outlined, () => Navigator.pushNamed(context, '/settings')),
+                _glassCircle(Icons.tune_rounded,
+                    () => Navigator.pushNamed(context, '/settings')),
               ],
             ),
           ),
 
-          // 5. Cursor & Tracking
-          if (_sState != SessionState.idle) ...[
-            HandCursor(isFist: _isFist, x: _cursorPos.dx, y: _cursorPos.dy),
-            if (!_isFist) SelectionRing(position: _cursorPos, onComplete: () {}),
-          ],
-
-          // 6. Floating Control Center
-          _buildControlCenter(),
-
-          // 7. Mini Camera Preview (iPhone Dynamic Island Style)
-          if (_sState != SessionState.idle) _buildMiniCamera(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNeuralRadar() {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, _) => Container(
-        width: 280,
-        height: 280,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.05 + 0.1 * _pulseController.value)),
-          boxShadow: [
-            BoxShadow(
-              color: AirShiftColors.bluePrimary.withOpacity(0.05 * _pulseController.value),
-              blurRadius: 100,
-              spreadRadius: 20,
-            )
-          ],
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Internal Rings
-            ...List.generate(3, (i) => Transform.scale(
-              scale: 0.3 + (i * 0.3) + (0.1 * _pulseController.value),
-              child: Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.05)))),
-            )),
-            // Core
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [AirShiftColors.bluePrimary.withOpacity(0.4), Colors.transparent]),
-              ),
-              child: Icon(_sState == SessionState.idle ? Icons.grain : Icons.auto_awesome, color: Colors.white, size: 28),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSystemBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _sState == SessionState.idle ? Colors.orange : AirShiftColors.greenConfirm,
-              boxShadow: [BoxShadow(color: (_sState == SessionState.idle ? Colors.orange : AirShiftColors.greenConfirm).withOpacity(0.5), blurRadius: 8)],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            _sState == SessionState.idle ? 'ENGINE READY' : 'TRACKING: ${_gestureName.toUpperCase()}',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlCenter() {
-    return Positioned(
-      bottom: 50,
-      left: 24,
-      right: 24,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
+          // ── 4. Central radar ──
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: _buildActionButton(
-                    _sState == SessionState.idle ? 'START GESTURE ENGINE' : 'STOP ENGINE',
-                    _sState == SessionState.idle ? AirShiftColors.bluePrimary : Colors.redAccent,
-                    () async {
-                      if (_sState == SessionState.idle) {
-                        if (await Permission.camera.request().isGranted) {
-                          widget.session.start();
-                        }
-                      } else {
-                        widget.session.end();
-                      }
-                    },
-                  ),
-                ),
+                _radar(),
+                const SizedBox(height: 48),
+                _statusChip(),
               ],
             ),
+          ),
+
+          // ── 5. Cursor + ring ──
+          if (isActive) ...[
+            HandCursor(isFist: _isFist, x: cursorX, y: cursorY),
+            if (!_isFist) SelectionRing(position: Offset(cursorX, cursorY), onComplete: () {}),
+          ],
+
+          // ── 6. Bottom control bar ──
+          Positioned(
+            bottom: 32 + MediaQuery.of(context).padding.bottom,
+            left: 20, right: 20,
+            child: _controlBar(isActive),
+          ),
+
+          // ── 7. Camera preview (Dynamic Island) ──
+          if (isActive) _cameraIsland(),
+        ],
+      ),
+    );
+  }
+
+  // ─── CAMERA ISLAND ─────────────────────────────────
+
+  Widget _cameraIsland() {
+    final ctrl = _session.detector.cameraController;
+    final hasCamera = ctrl != null && ctrl.value.isInitialized;
+
+    return Positioned(
+      bottom: 130 + MediaQuery.of(context).padding.bottom,
+      right: 20,
+      child: AnimatedOpacity(
+        opacity: hasCamera ? 1.0 : 0.5,
+        duration: const Duration(milliseconds: 400),
+        child: Container(
+          width: 110, height: 150,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 20)],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: hasCamera
+                ? CameraPreview(ctrl)
+                : const Center(child: SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24))),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildActionButton(String label, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Center(
-          child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1)),
+  // ─── RADAR ─────────────────────────────────────────
+
+  Widget _radar() {
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (_, __) {
+        final p = _pulseCtrl.value;
+        final isActive = _state != SessionState.idle;
+        return Container(
+          width: 260, height: 260,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.04 + 0.06 * p)),
+            boxShadow: [
+              BoxShadow(
+                color: (isActive ? AirShiftColors.greenConfirm : AirShiftColors.purpleActive)
+                    .withOpacity(0.06 * p),
+                blurRadius: 120, spreadRadius: 30),
+            ],
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              for (int i = 0; i < 3; i++)
+                Transform.scale(
+                  scale: 0.35 + i * 0.28 + 0.08 * p,
+                  child: Container(decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.04)))),
+                ),
+              Container(
+                width: 72, height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    (isActive ? AirShiftColors.greenConfirm : AirShiftColors.purpleActive).withOpacity(0.35),
+                    Colors.transparent]),
+                ),
+                child: Icon(
+                  isActive ? Icons.sensors_rounded : Icons.radio_button_unchecked,
+                  color: Colors.white.withOpacity(0.9), size: 26),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ─── STATUS CHIP ───────────────────────────────────
+
+  Widget _statusChip() {
+    final active = _state != SessionState.idle;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: Colors.white.withOpacity(0.07)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 7, height: 7,
+          decoration: BoxDecoration(shape: BoxShape.circle,
+            color: active ? AirShiftColors.greenConfirm : Colors.amber,
+            boxShadow: [BoxShadow(
+              color: (active ? AirShiftColors.greenConfirm : Colors.amber).withOpacity(0.6),
+              blurRadius: 8)])),
+        const SizedBox(width: 12),
+        Text(_gestureName.toUpperCase(),
+          style: TextStyle(fontSize: 10, letterSpacing: 2.5,
+            fontWeight: FontWeight.w800, color: Colors.white.withOpacity(0.6))),
+      ]),
+    );
+  }
+
+  // ─── CONTROL BAR ───────────────────────────────────
+
+  Widget _controlBar(bool active) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withOpacity(0.08))),
+          child: Row(children: [
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(active ? 'NEURAL ENGINE ACTIVE' : 'ENGINE STANDBY',
+                  style: TextStyle(fontSize: 9, letterSpacing: 2,
+                    fontWeight: FontWeight.w900, color: Colors.white.withOpacity(0.35))),
+                const SizedBox(height: 4),
+                Text(active ? 'Precise Finger Tracking' : 'Tap to begin session',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              ])),
+            const SizedBox(width: 12),
+            _actionBtn(
+              label: active ? 'STOP' : 'START',
+              color: active ? const Color(0xFFFF4757) : AirShiftColors.bluePrimary,
+              onTap: () { if (active) _session.end(); else _session.start(); },
+            ),
+          ]),
         ),
       ),
     );
   }
 
-  Widget _buildMiniCamera() {
-    return Positioned(
-      top: 130,
-      right: 24,
+  // ─── HELPERS ───────────────────────────────────────
+
+  Widget _actionBtn({required String label, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(onTap: onTap,
       child: Container(
-        width: 100,
-        height: 140,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: CameraFeedPreview(session: widget.session),
-        ),
-      ),
-    );
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.35), blurRadius: 16, spreadRadius: 1)]),
+        child: Text(label, style: const TextStyle(
+          fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12, color: Colors.white)),
+      ));
   }
 
-  Widget _buildIconButton(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
+  Widget _glassCircle(IconData icon, VoidCallback onTap) {
+    return GestureDetector(onTap: onTap,
+      child: Container(padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05),
           shape: BoxShape.circle,
-          color: Colors.white.withOpacity(0.05),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-        ),
-        child: Icon(icon, color: Colors.white70, size: 20),
-      ),
-    );
+          border: Border.all(color: Colors.white.withOpacity(0.08))),
+        child: Icon(icon, color: Colors.white, size: 20)));
   }
 }
 
-class MeshGradientPainter extends CustomPainter {
-  final double progress;
-  MeshGradientPainter({required this.progress});
+// ════════════════════════════════════════════════════════════
+// MESH GRADIENT PAINTER
+// ════════════════════════════════════════════════════════════
+class _MeshPainter extends CustomPainter {
+  final double t;
+  _MeshPainter({required this.t});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    
-    // Smooth animated background blobs
-    void drawBlob(Offset center, double radius, Color color) {
-       final gradient = RadialGradient(colors: [color.withOpacity(0.15), Colors.transparent]);
-       paint.shader = gradient.createShader(Rect.fromCircle(center: center, radius: radius));
-       canvas.drawCircle(center, radius, paint);
+    final a = t * 2 * math.pi;
+    final p = Paint();
+    void blob(Offset c, double r, Color col) {
+      p.shader = RadialGradient(colors: [col.withOpacity(0.14), Colors.transparent])
+          .createShader(Rect.fromCircle(center: c, radius: r));
+      canvas.drawCircle(c, r, p);
     }
-
-    final t = progress * 2 * math.pi;
-    drawBlob(Offset(size.width * 0.2 + math.sin(t) * 50, size.height * 0.3 + math.cos(t) * 50), 400, const Color(0xFF4A90E2));
-    drawBlob(Offset(size.width * 0.8 + math.cos(t) * 50, size.height * 0.7 + math.sin(t) * 50), 350, const Color(0xFF9013FE));
+    blob(Offset(size.width * 0.75 + math.sin(a) * 90, size.height * 0.25 + math.cos(a) * 90), 380, const Color(0xFF7C3AED));
+    blob(Offset(size.width * 0.25 + math.cos(a) * 70, size.height * 0.75 + math.sin(a) * 70), 420, const Color(0xFF06B6D4));
+    blob(Offset(size.width * 0.55 + math.sin(a * 0.7) * 40, size.height * 0.5 + math.cos(a * 0.7) * 40), 300, const Color(0xFF4338CA));
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-class CameraFeedPreview extends StatefulWidget {
-  final AirShiftSession session;
-  const CameraFeedPreview({super.key, required this.session});
-
-  @override
-  State<CameraFeedPreview> createState() => _CameraFeedPreviewState();
-}
-
-class _CameraFeedPreviewState extends State<CameraFeedPreview> {
-  @override
-  void initState() {
-    super.initState();
-    widget.session.stateStream.listen((_) { if (mounted) setState(() {}); });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final detector = widget.session.detector;
-    if (detector.cameraController == null || !detector.cameraController!.value.isInitialized) {
-      return const Center(child: Icon(Icons.videocam_off, color: Colors.white24));
-    }
-    return CameraPreview(detector.cameraController!);
-  }
+  bool shouldRepaint(covariant CustomPainter old) => true;
 }

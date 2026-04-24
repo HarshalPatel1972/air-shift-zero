@@ -1,170 +1,137 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { margin: 0; overflow: hidden; background: black; }
-    #video { 
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* Mirror for natural feel */
-    }
+    * { margin: 0; padding: 0; }
+    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+    #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
   </style>
 </head>
 <body>
-  <video id="video" autoplay playsinline></video>
-  <script type="module">
-    import {
-      HandLandmarker,
-      FilesetResolver
-    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+  <video id="video" autoplay playsinline muted></video>
 
-    let handLandmarker;
-    let video = document.getElementById('video');
-    let lastVideoTime = -1;
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.mjs";
+
+    let handLandmarker = null;
+    const video = document.getElementById('video');
     let isTracking = false;
+    let lastVideoTime = -1;
     let cameraStream = null;
 
-    function flutterLog(msg) {
-      const data = JSON.stringify({ type: 'log', message: msg });
-      if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(data);
-      } else if (window.FlutterChannel) {
-        window.FlutterChannel.postMessage(data);
+    /* ── Communication Layer ─────────────────────────── */
+    function send(obj) {
+      const s = JSON.stringify(obj);
+      if (window.FlutterChannel)                        FlutterChannel.postMessage(s);
+      else if (window.chrome && window.chrome.webview)  window.chrome.webview.postMessage(s);
+    }
+    function log(m) { send({type:'log', message:m}); }
+
+    /* ── Gesture Classifier ──────────────────────────── */
+    function classifyGesture(hand) {
+      const tips    = [hand[8], hand[12], hand[16], hand[20]];
+      const pips    = [hand[6], hand[10], hand[14], hand[18]];
+      const wrist   = hand[0];
+      const thumbTip = hand[4];
+      const thumbIp  = hand[3];
+
+      let extended = 0;
+      for (let i = 0; i < 4; i++) {
+        if (tips[i].y < pips[i].y) extended++;
       }
+      const thumbOut = Math.abs(thumbTip.x - wrist.x) > Math.abs(thumbIp.x - wrist.x);
+
+      if (extended <= 1 && !thumbOut)       return {id:'fist',    name:'Closed Fist'};
+      if (extended === 4 && thumbOut)        return {id:'palm',    name:'Open Palm'};
+      if (extended === 1 && tips[0].y < pips[0].y) return {id:'pointer', name:'Pointer'};
+      if (extended === 2 && tips[0].y < pips[0].y && tips[1].y < pips[1].y)
+                                               return {id:'victory', name:'Victory'};
+      if (!extended && thumbOut)             return {id:'thumbs',  name:'Thumbs Up'};
+      return {id:'unknown', name:'Tracking...'};
     }
 
+    /* ── MediaPipe Init ──────────────────────────────── */
     async function initEngine() {
       try {
-        flutterLog("Pre-warming MediaPipe Engine...");
+        log("Loading MediaPipe WASM...");
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
         );
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
             delegate: "GPU"
           },
           runningMode: "VIDEO",
           numHands: 1
         });
-        flutterLog("Landmarker Ready.");
+        log("MediaPipe engine ready.");
+        send({type:'ready'});
       } catch (e) {
-        flutterLog("ERROR in initEngine: " + e.toString());
+        log("MediaPipe init error: " + e.toString());
       }
     }
 
-    async function toggleCamera(enabled) {
+    /* ── Camera Control ──────────────────────────────── */
+    async function toggleCamera(on) {
+      log("toggleCamera(" + on + ")");
       try {
-          if (enabled && !cameraStream) {
-            flutterLog("Activating Camera Hardware...");
-            cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                  facingMode: "user",
-                  width: { ideal: 640 }, 
-                  height: { ideal: 480 } 
-                } 
-            });
-            video.srcObject = cameraStream;
-            video.onloadeddata = () => {
-                video.play();
-                isTracking = true;
-                predict();
-            };
-            flutterLog("Camera Hardware Active.");
-          } else if (!enabled && cameraStream) {
-            flutterLog("Deactivating Camera Hardware...");
-            isTracking = false;
-            cameraStream.getTracks().forEach(track => track.stop());
-            cameraStream = null;
-            video.srcObject = null;
-            flutterLog("Camera Hardware Off.");
-          }
+        if (on && !cameraStream) {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: {ideal:640}, height: {ideal:480} }
+          });
+          video.srcObject = cameraStream;
+          await video.play();
+          isTracking = true;
+          log("Camera live. Starting predict loop.");
+          predict();
+        } else if (!on && cameraStream) {
+          isTracking = false;
+          cameraStream.getTracks().forEach(t => t.stop());
+          cameraStream = null;
+          video.srcObject = null;
+          log("Camera stopped.");
+        }
       } catch (e) {
-          flutterLog("ToggleCamera Error: " + e.toString());
+        log("Camera error: " + e.toString());
       }
     }
 
-    // Android/Generic Bridge Hook
+    /* ── Command Dispatch ────────────────────────────── */
     window.dispatchCommand = (cmd) => {
-       if (cmd === 'START') toggleCamera(true);
-       if (cmd === 'STOP') toggleCamera(false);
+      log("Command received: " + cmd);
+      if (cmd === 'START') toggleCamera(true);
+      if (cmd === 'STOP')  toggleCamera(false);
     };
-
+    // Windows WebView2
     if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', (event) => {
-            if (event.data.command === 'START') toggleCamera(true);
-            if (event.data.command === 'STOP') toggleCamera(false);
-        });
+      window.chrome.webview.addEventListener('message', e => {
+        if (e.data && e.data.command) window.dispatchCommand(e.data.command);
+      });
     }
 
+    /* ── Prediction Loop ─────────────────────────────── */
     async function predict() {
       if (!isTracking) return;
-      if (video.currentTime !== lastVideoTime) {
+      if (video.currentTime !== lastVideoTime && handLandmarker) {
         lastVideoTime = video.currentTime;
-        
-        if (handLandmarker) {
-          const results = handLandmarker.detectForVideo(video, performance.now());
-          
-          if (results.landmarks && results.landmarks.length > 0) {
-            const hand = results.landmarks[0];
-            const indexFinger = hand[8];
-            const gesture = classifyGesture(hand);
-
-            const message = {
-              type: 'landmarks',
-              x: indexFinger.x,
-              y: indexFinger.y,
-              isFist: gesture.id === 'fist',
-              gesture: gesture.name
-            };
-            
-            const data = JSON.stringify(message);
-            if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(data);
-            } else if (window.FlutterChannel) {
-              window.FlutterChannel.postMessage(data);
-            }
-          } else {
-            const data = JSON.stringify({ type: 'empty' });
-            if (window.chrome && window.chrome.webview) {
-               window.chrome.webview.postMessage(data);
-            } else if (window.FlutterChannel) {
-               window.FlutterChannel.postMessage(data);
-            }
-          }
+        const results = handLandmarker.detectForVideo(video, performance.now());
+        if (results.landmarks && results.landmarks.length > 0) {
+          const hand = results.landmarks[0];
+          const g = classifyGesture(hand);
+          send({ type:'landmarks', x: hand[8].x, y: hand[8].y,
+                 isFist: g.id === 'fist', gesture: g.name });
+        } else {
+          send({type:'empty'});
         }
       }
-      if (isTracking) requestAnimationFrame(predict);
+      requestAnimationFrame(predict);
     }
 
-    function classifyGesture(landmarks) {
-      const isExtended = (tip, base) => landmarks[tip].y < landmarks[base].y;
-      const index = isExtended(8, 6);
-      const middle = isExtended(12, 10);
-      const ring = isExtended(16, 14);
-      const pinky = isExtended(20, 18);
-      const thumb = Math.abs(landmarks[4].x - landmarks[0].x) > 0.08;
-
-      if (index && middle && ring && pinky) return { id: 'palm', name: 'Open Palm' };
-      if (index && middle && !ring && !pinky) return { id: 'victory', name: 'Victory (V)' };
-      if (index && !middle && !ring && !pinky) return { id: 'pointer', name: 'Pointer Finger' };
-      if (!index && !middle && !ring && !pinky) return { id: 'fist', name: 'Closed Fist' };
-
-      return { id: 'unknown', name: 'Tracking...' };
-    }
-
-    // Diagnostics
-    setInterval(() => {
-        if (isTracking && video.paused && cameraStream) {
-            video.play();
-        }
-    }, 2000);
-
+    /* ── Boot ─────────────────────────────────────────── */
     initEngine();
   </script>
 </body>
